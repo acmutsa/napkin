@@ -1,0 +1,25 @@
+{
+  "name": "napkin",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Napkin monorepo with React frontend and Go backend",
+  "scripts": {
+    "dev": "concurrently -n frontend,backend -c cyan,green \"pnpm dev:frontend\" \"pnpm dev:backend\"",
+    "dev:frontend": "pnpm --filter napkin-app dev",
+    "dev:backend": "cd napkin-backend && go run main.go",
+    "build": "pnpm build:frontend && pnpm build:backend",
+    "build:frontend": "pnpm --filter napkin-app build",
+    "build:backend": "cd napkin-backend && go build -o bin/server .",
+    "start": "cd napkin-backend && ./bin/server",
+    "preview": "pnpm --filter napkin-app preview",
+    "lint": "pnpm --filter napkin-app lint"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
