@@ -29,7 +29,7 @@ pnpm install
 ## Development
 
 Run both frontend and backend with a single command:
-
+reat
 ```bash
 pnpm dev
 ```
