@@ -32,7 +32,12 @@ jobs:
       - name: Create preview app (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          flyctl apps create ${{ steps.app-name.outputs.name }} || echo "App may already exist"
+          APP_NAME="${{ steps.app-name.outputs.name }}"
+          if ! flyctl apps list --json | jq -e ".[] | select(.Name == \"$APP_NAME\")" > /dev/null 2>&1; then
+            flyctl apps create "$APP_NAME"
+          else
+            echo "App $APP_NAME already exists"
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
