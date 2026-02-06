@@ -35,7 +35,7 @@ jobs:
 
       - name: Deploy to Fly.io
         run: |
-          flyctl deploy --app ${{ steps.app-name.outputs.name }} --remote-only --config fly.toml
+          flyctl deploy --app ${{ steps.app-name.outputs.name }} --remote-only --config fly.toml --ha=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
