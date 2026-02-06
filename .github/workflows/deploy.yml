@@ -29,13 +29,15 @@ jobs:
       - name: Create preview app (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          flyctl apps create ${{ steps.app-name.outputs.name }} --org personal || true
+          if ! flyctl apps list | grep -q "${{ steps.app-name.outputs.name }}"; then
+            flyctl launch --name ${{ steps.app-name.outputs.name }} --copy-config --no-deploy --yes
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Deploy to Fly.io
         run: |
-          flyctl deploy --app ${{ steps.app-name.outputs.name }} --remote-only
+          flyctl deploy --app ${{ steps.app-name.outputs.name }} --remote-only --config fly.toml
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
