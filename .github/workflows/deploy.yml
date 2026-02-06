@@ -9,6 +9,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -29,13 +32,18 @@ jobs:
       - name: Create preview app (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          flyctl apps create ${{ steps.app-name.outputs.name }} --org personal || true
+          APP_NAME="${{ steps.app-name.outputs.name }}"
+          if ! flyctl apps list --json | jq -e ".[] | select(.Name == \"$APP_NAME\")" > /dev/null 2>&1; then
+            flyctl apps create "$APP_NAME"
+          else
+            echo "App $APP_NAME already exists"
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Deploy to Fly.io
         run: |
-          flyctl deploy --app ${{ steps.app-name.outputs.name }} --remote-only
+          flyctl deploy --app ${{ steps.app-name.outputs.name }} --remote-only --config fly.toml --ha=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 

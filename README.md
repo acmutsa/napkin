@@ -18,7 +18,7 @@ napkin/
 
 - Node.js >= 18
 - pnpm >= 8
-- Go >= 1.21
+- Go >= 1.25
 
 ### Install Dependencies
 
@@ -30,6 +30,7 @@ pnpm install
 
 Run both frontend and backend with a single command:
 reat
+
 ```bash
 pnpm dev
 ```
