@@ -29,9 +29,7 @@ jobs:
       - name: Create preview app (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          if ! flyctl apps list | grep -q "${{ steps.app-name.outputs.name }}"; then
-            flyctl launch --name ${{ steps.app-name.outputs.name }} --copy-config --no-deploy --yes
-          fi
+          flyctl apps create ${{ steps.app-name.outputs.name }} || echo "App may already exist"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
