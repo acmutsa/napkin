@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"napkin-backend/compiler"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +16,33 @@ type HealthResponse struct {
 }
 
 func main() {
+	ir := compiler.IR{
+		Nodes: []compiler.GraphNode{
+			{
+				ID:   "web",
+				Type: "aws_instance",
+				Attributes: map[string]string{
+					"ami":           "ami-123",
+					"instance_type": "t2.micro",
+				},
+			},
+		},
+	}
+
+	target := &compiler.TerraformTarget{}
+
+	tfFile, err := target.Compile(ir)
+	if err != nil {
+		panic(err)
+	}
+
+	err = compiler.WriteTerraformFile(tfFile, "output.tf")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Terraform file written to output.tf")
+
 	mux := http.NewServeMux()
 
 	// API Routes
