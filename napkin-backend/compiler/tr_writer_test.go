@@ -23,6 +23,7 @@ func TestWriteTerraformFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tmp.Close()
 	defer os.Remove(tmp.Name())
 
 	err = WriteTerraformFile(tf, tmp.Name())

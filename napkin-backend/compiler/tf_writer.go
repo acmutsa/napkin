@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -12,7 +13,7 @@ func WriteTerraformFile(tf *TFFile, path string) error {
 		builder.WriteString(`resource "` + v.Type + `" "` + v.Name + `" {` + "\n")
 
 		for key, value := range v.Attributes {
-			builder.WriteString("  " + key + ` = "` + value + `"` + "\n")
+			builder.WriteString("  " + key + " = " + strconv.Quote(value) + "\n")
 		}
 
 		builder.WriteString("}\n\n")
