@@ -8,7 +8,9 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 
 	for _, node := range ir.Nodes {
 		attributes := make(map[string]string, len(node.Attributes))
-
+		for field, value := range node.Attributes {
+			attributes[field] = value
+		}
 		resource := TFResource{
 			Type:       node.Type,
 			Name:       node.ID,
