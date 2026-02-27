@@ -6,17 +6,32 @@ import (
 	"strings"
 )
 
+func writeBlock(builder *strings.Builder, block TFBlock, indent string) {
+	builder.WriteString(indent + block.Class)
+
+	for _, label := range block.Labels {
+		builder.WriteString(" " + strconv.Quote(label))
+	}
+
+	builder.WriteString(" {\n")
+
+	for k, v := range block.Attributes {
+		builder.WriteString(indent + "  " + k + " = " + strconv.Quote(v) + "\n")
+	}
+
+	for _, child := range block.Blocks {
+		writeBlock(builder, child, indent+"  ")
+	}
+
+	builder.WriteString(indent + "}\n")
+}
+
 func WriteTerraformFile(tf *TFFile, path string) error {
 	var builder strings.Builder
 
-	for _, v := range tf.Resources {
-		builder.WriteString(`resource "` + v.Type + `" "` + v.Name + `" {` + "\n")
-
-		for key, value := range v.Attributes {
-			builder.WriteString("  " + key + " = " + strconv.Quote(value) + "\n")
-		}
-
-		builder.WriteString("}\n\n")
+	for _, block := range tf.Block {
+		writeBlock(&builder, block, "")
+		builder.WriteString("\n")
 	}
 
 	return os.WriteFile(path, []byte(builder.String()), 0644)

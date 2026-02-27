@@ -8,10 +8,10 @@ import (
 
 func TestWriteTerraformFile(t *testing.T) {
 	tf := &TFFile{
-		Resources: []TFResource{
+		Block: []TFBlock{
 			{
-				Type: "aws_instance",
-				Name: "web",
+				Class:  "resource",
+				Labels: []string{"aws_instance", "web"},
 				Attributes: map[string]string{
 					"ami": "ami-123",
 				},

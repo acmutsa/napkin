@@ -19,8 +19,17 @@ func main() {
 	ir := compiler.IR{
 		Nodes: []compiler.GraphNode{
 			{
-				ID:   "web",
-				Type: "aws_instance",
+				ID:    "aws",
+				Class: compiler.ClassProvider,
+				Type:  "aws",
+				Attributes: map[string]string{
+					"region": "us-east-1",
+				},
+			},
+			{
+				ID:    "web",
+				Class: compiler.ClassResource,
+				Type:  "aws_instance",
 				Attributes: map[string]string{
 					"ami":           "ami-123",
 					"instance_type": "t2.micro",

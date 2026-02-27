@@ -1,5 +1,14 @@
 package compiler
 
+type NodeClass string
+
+const (
+	ClassResource NodeClass = "resource"
+	ClassProvider NodeClass = "provider"
+	ClassModule   NodeClass = "module"
+	ClassData     NodeClass = "data"
+)
+
 type TFResource struct {
 	Type       string
 	Name       string
@@ -15,15 +24,19 @@ type TFModule struct {
 	Name      string
 	Resources []TFResource
 }
-
+type TFBlock struct {
+	Class      string
+	Labels     []string
+	Attributes map[string]string
+	Blocks     []TFBlock
+}
 type TFFile struct {
-	Resources []TFResource
-	Modules   []TFModule
-	Outputs   []TFOutput
+	Block []TFBlock
 }
 
 type GraphNode struct {
 	ID         string
+	Class      NodeClass
 	Type       string
 	Attributes map[string]string
 	Edges      []string // list of node IDs this node depends on

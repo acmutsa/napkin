@@ -6,8 +6,9 @@ func TestTerraformTargetCompile(t *testing.T) {
 	ir := IR{
 		Nodes: []GraphNode{
 			{
-				ID:   "web",
-				Type: "aws_instance",
+				ID:    "web",
+				Class: ClassResource,
+				Type:  "aws_instance",
 				Attributes: map[string]string{
 					"ami":           "ami-123",
 					"instance_type": "t2.micro",
@@ -23,21 +24,29 @@ func TestTerraformTargetCompile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(tfFile.Resources) != 1 {
-		t.Fatalf("expected 1 resource, got %d", len(tfFile.Resources))
+	if len(tfFile.Block) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(tfFile.Block))
 	}
 
-	resource := tfFile.Resources[0]
+	block := tfFile.Block[0]
 
-	if resource.Name != "web" {
-		t.Errorf("expected name web, got %s", resource.Name)
+	if block.Class != "resource" {
+		t.Errorf("expected class resource, got %s", block.Class)
 	}
 
-	if resource.Type != "aws_instance" {
-		t.Errorf("expected type aws_instance, got %s", resource.Type)
+	if len(block.Labels) != 2 {
+		t.Fatalf("expected 2 labels, got %d", len(block.Labels))
 	}
 
-	if resource.Attributes["ami"] != "ami-123" {
+	if block.Labels[0] != "aws_instance" {
+		t.Errorf("expected type aws_instance, got %s", block.Labels[0])
+	}
+
+	if block.Labels[1] != "web" {
+		t.Errorf("expected name web, got %s", block.Labels[1])
+	}
+
+	if block.Attributes["ami"] != "ami-123" {
 		t.Errorf("expected ami attribute to be ami-123")
 	}
 }
