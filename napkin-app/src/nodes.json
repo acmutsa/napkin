@@ -1,0 +1,21 @@
+{
+    "ec2": {
+      "label": "EC2 Instance",
+      "color": "bg-blue-50",
+      "inputs": [
+        { "id": "network-in", "type": "network", "label": "Network" }
+      ],
+      "outputs": [
+        { "id": "network-out", "type": "network", "label": "Network" },
+        { "id": "data-out", "type": "data", "label": "Data" }
+      ]
+    },
+    "db": {
+      "label": "Database",
+      "color": "bg-green-50",
+      "inputs": [
+        { "id": "data-in", "type": "data", "label": "Data" }
+      ],
+      "outputs": []
+    }
+  }

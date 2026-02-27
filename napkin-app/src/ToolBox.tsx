@@ -1,10 +1,17 @@
-const nodeItems = [
-  { kind: 'number', label: 'Number', description: 'Holds a numeric value' },
-  { kind: 'text', label: 'Text', description: 'Holds a text value' },
-];
+type NodeItem = {
+  kind: string;
+  label: string;
+  description: string;
+};
+
 type ToolboxProps = {
   onAdd: (kind: string) => void;
 };
+
+const nodeItems: NodeItem[] = [
+  { kind: 'compute', label: 'EC2 Instance', description: 'Virtual server' },
+  { kind: 'database', label: 'Database', description: 'Database node' },
+];
 
 export default function Toolbox({ onAdd }: ToolboxProps) {
   return (

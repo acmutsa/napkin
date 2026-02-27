@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
-import CustomNode from './CustomNode';
-import Toolbox from './ToolBox';
+import { useState, useCallback } from "react";
+import Toolbox from "./ToolBox";
+import ResourceNode from "@/components/ResourceNode";
+import CustomNode from "./CustomNode";
 import {
   ReactFlow,
   Background,
@@ -18,27 +19,21 @@ import {
   type OnNodesChange,
   type OnEdgesChange,
   type DefaultEdgeOptions,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 const nodeTypes = {
   custom: CustomNode,
-}
- 
-const initialNodes: Node[] = [
-  { id: '1', data: { label: 'Node 1' }, position: { x: 5, y: 5 } },
-  { id: '2', data: { label: 'Node 2' }, position: { x: 5, y: 100 } },
-  { id: '3', type: 'custom', data: { kind: 'text', text: 'Unique' }, position: { x: 5, y: 200 } },
-];
- 
-const initialEdges: Edge[] = [{ id: 'e1-2', source: '1', target: '2' }];
- 
-const fitViewOptions: FitViewOptions = {
-  padding: 0.2,
+  resource: ResourceNode,
 };
- 
+
+const initialNodes: Node[] = [];
+const initialEdges: Edge[] = [];
+
+const fitViewOptions: FitViewOptions = { padding: 0.2 };
 const defaultEdgeOptions: DefaultEdgeOptions = {
   animated: true,
+  style: { strokeDasharray: "5 5", stroke: "#888" },
 };
 
 function Flow() {
@@ -48,15 +43,15 @@ function Flow() {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    [],
+    []
   );
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    [],
+    []
   );
   const onConnect: OnConnect = useCallback(
     (connection) => setEdges((eds) => addEdge(connection, eds)),
-    [],
+    []
   );
 
   const onAdd = useCallback(
@@ -65,19 +60,32 @@ function Flow() {
       const centerY = window.innerHeight / 2;
       const position = screenToFlowPosition({ x: centerX, y: centerY });
 
-      const newNode = {
+      const newNode: Node = {
         id: `${Date.now()}`,
-        type: 'custom',
+        type: "resource",
         position,
-        data:
-          kind === 'number'
-            ? { kind: 'number', number: 0 }
-            : { kind: 'text', text: 'Unique' },
+        data: {
+          spec: {
+            label: kind === "compute" ? "EC2 Instance" : "Database",
+            color:
+              kind === "compute"
+                ? "bg-blue-50 border-blue-200"
+                : "bg-green-50 border-green-200",
+            inputs:
+              kind === "compute"
+                ? [{ id: "db-conn", type: "data", label: "DB Connection" }]
+                : [],
+            outputs:
+              kind === "compute"
+                ? [{ id: "vpc", type: "network", label: "Network" }]
+                : [{ id: "db-out", type: "data", label: "DB Output" }],
+          },
+        },
       };
 
       setNodes((nds) => [...nds, newNode]);
     },
-    [screenToFlowPosition],
+    [screenToFlowPosition]
   );
 
   return (
@@ -102,7 +110,7 @@ function Flow() {
     </div>
   );
 }
- 
+
 export default function App() {
   return (
     <ReactFlowProvider>
