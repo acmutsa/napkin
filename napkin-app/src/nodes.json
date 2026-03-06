@@ -17,5 +17,23 @@
         { "id": "data-in", "type": "data", "label": "Data" }
       ],
       "outputs": []
+    },
+    "loadBalancer": {
+      "label": "Load Balancer",
+      "color": "bg-purple-50 border-purple-200",
+      "inputs": [{ "id": "traffic-in", "type": "network", "label": "Traffic" }],
+      "outputs": [{ "id": "traffic-out", "type": "network", "label": "Forward Traffic" }]
+    },
+    "securityGroup": {
+      "label": "Security Group",
+      "color": "bg-yellow-50 border-yellow-200",
+      "inputs": [{ "id": "inbound", "type": "network", "label": "Inbound" }],
+      "outputs": [{ "id": "outbound", "type": "network", "label": "Outbound" }]
+    },
+    "storageBucket": {
+      "label": "Storage Bucket",
+      "color": "bg-orange-50 border-orange-200",
+      "inputs": [{ "id": "data-in", "type": "data", "label": "Objects" }],
+      "outputs": []
     }
   }

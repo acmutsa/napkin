@@ -55,38 +55,76 @@ function Flow() {
   );
 
   const onAdd = useCallback(
-    (kind: string) => {
-      const centerX = window.innerWidth / 2;
-      const centerY = window.innerHeight / 2;
-      const position = screenToFlowPosition({ x: centerX, y: centerY });
+  (kind: string) => {
+    let spec;
 
-      const newNode: Node = {
-        id: `${Date.now()}`,
-        type: "resource",
-        position,
-        data: {
-          spec: {
-            label: kind === "compute" ? "EC2 Instance" : "Database",
-            color:
-              kind === "compute"
-                ? "bg-blue-50 border-blue-200"
-                : "bg-green-50 border-green-200",
-            inputs:
-              kind === "compute"
-                ? [{ id: "db-conn", type: "data", label: "DB Connection" }]
-                : [],
-            outputs:
-              kind === "compute"
-                ? [{ id: "vpc", type: "network", label: "Network" }]
-                : [{ id: "db-out", type: "data", label: "DB Output" }],
-          },
-        },
-      };
+    switch (kind) {
+      case "compute": // EC2 Instance
+        spec = {
+          label: "EC2 Instance",
+          color: "bg-blue-50 border-blue-200",
+          inputs: [
+            { id: "db-in", type: "data", label: "DB Connection" }, // from Database
+            { id: "traffic-in", type: "network", label: "Incoming Traffic" }, // from Load Balancer
+          ],
+          outputs: [
+            { id: "network-out", type: "network", label: "Network" }, // to Security Group / downstream
+            { id: "data-out", type: "data", label: "Storage Output" }, // to Storage Bucket
+          ],
+        };
+        break;
 
-      setNodes((nds) => [...nds, newNode]);
-    },
-    [screenToFlowPosition]
-  );
+      case "database":
+        spec = {
+          label: "Database",
+          color: "bg-green-50 border-green-200",
+          inputs: [], // no inputs
+          outputs: [{ id: "db-out", type: "data", label: "DB Output" }], // to EC2
+        };
+        break;
+
+      case "loadBalancer":
+        spec = {
+          label: "Load Balancer",
+          color: "bg-purple-50 border-purple-200",
+          inputs: [{ id: "traffic-in", type: "network", label: "Incoming Traffic" }], // from users / upstream
+          outputs: [{ id: "traffic-out", type: "network", label: "Forward Traffic" }], // to EC2 nodes
+        };
+        break;
+
+      case "securityGroup":
+        spec = {
+          label: "Security Group",
+          color: "bg-yellow-50 border-yellow-200",
+          inputs: [{ id: "inbound", type: "network", label: "Inbound" }], // from EC2 or Load Balancer
+          outputs: [{ id: "outbound", type: "network", label: "Outbound" }], // to EC2 / network nodes
+        };
+        break;
+
+      case "storageBucket":
+        spec = {
+          label: "Storage Bucket",
+          color: "bg-orange-50 border-orange-200",
+          inputs: [{ id: "data-in", type: "data", label: "Objects" }], // from EC2
+          outputs: [], // sink
+        };
+        break;
+
+      default:
+        return; // unknown kind
+    }
+
+    const newNode: Node = {
+      id: `${Date.now()}`,
+      type: "resource",
+      position: { x: 100, y: 100 }, // fixed starting position
+      data: { spec },
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+  },
+  []
+);
 
   return (
     <div className="w-screen h-screen relative">

@@ -11,6 +11,9 @@ type ToolboxProps = {
 const nodeItems: NodeItem[] = [
   { kind: 'compute', label: 'EC2 Instance', description: 'Virtual server' },
   { kind: 'database', label: 'Database', description: 'Database node' },
+  { kind: 'loadBalancer', label: 'Load Balancer', description: 'Distributes traffic' },
+  { kind: 'securityGroup', label: 'Security Group', description: 'Firewall rules' },
+  { kind: 'storageBucket', label: 'Storage Bucket', description: 'Object storage' },
 ];
 
 export default function Toolbox({ onAdd }: ToolboxProps) {
