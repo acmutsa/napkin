@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import Toolbox from "./ToolBox";
 import ResourceNode from "@/components/ResourceNode";
-import CustomNode from "./CustomNode";
+import ResourceEdge from "@/components/ResourceEdge";
 import {
   ReactFlow,
   Background,
@@ -23,8 +23,10 @@ import {
 import "@xyflow/react/dist/style.css";
 
 const nodeTypes = {
-  custom: CustomNode,
   resource: ResourceNode,
+};
+const edgeTypes = {
+  resource: ResourceEdge,
 };
 
 const initialNodes: Node[] = [];
@@ -32,6 +34,7 @@ const initialEdges: Edge[] = [];
 
 const fitViewOptions: FitViewOptions = { padding: 0.2 };
 const defaultEdgeOptions: DefaultEdgeOptions = {
+  type: "resource",  
   animated: true,
   style: { strokeDasharray: "5 5", stroke: "#888" },
 };
@@ -63,6 +66,8 @@ function Flow() {
         spec = {
           label: "EC2 Instance",
           color: "bg-blue-50 border-blue-200",
+          borderColor: "border-blue-200",
+          iconColor: "text-blue-400",
           inputs: [
             { id: "db-in", type: "data", label: "DB Connection" }, // from Database
             { id: "traffic-in", type: "network", label: "Incoming Traffic" }, // from Load Balancer
@@ -78,6 +83,8 @@ function Flow() {
         spec = {
           label: "Database",
           color: "bg-green-50 border-green-200",
+          borderColor: "border-green-200",
+          iconColor: "text-green-400",
           inputs: [], // no inputs
           outputs: [{ id: "db-out", type: "data", label: "DB Output" }], // to EC2
         };
@@ -87,6 +94,8 @@ function Flow() {
         spec = {
           label: "Load Balancer",
           color: "bg-purple-50 border-purple-200",
+          borderColor: "border-purple-200",
+          iconColor: "text-purple-400",
           inputs: [{ id: "traffic-in", type: "network", label: "Incoming Traffic" }], // from users / upstream
           outputs: [{ id: "traffic-out", type: "network", label: "Forward Traffic" }], // to EC2 nodes
         };
@@ -96,6 +105,8 @@ function Flow() {
         spec = {
           label: "Security Group",
           color: "bg-yellow-50 border-yellow-200",
+          borderColor: "border-yellow-200",
+          iconColor: "text-yellow-400",
           inputs: [{ id: "inbound", type: "network", label: "Inbound" }], // from EC2 or Load Balancer
           outputs: [{ id: "outbound", type: "network", label: "Outbound" }], // to EC2 / network nodes
         };
@@ -105,6 +116,8 @@ function Flow() {
         spec = {
           label: "Storage Bucket",
           color: "bg-orange-50 border-orange-200",
+          borderColor: "border-orange-200",
+          iconColor: "text-orange-400",
           inputs: [{ id: "data-in", type: "data", label: "Objects" }], // from EC2
           outputs: [], // sink
         };
@@ -134,6 +147,7 @@ function Flow() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
