@@ -1,35 +1,112 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState, useCallback } from 'react';
+import CustomNode from './CustomNode';
+import Toolbox from './ToolBox';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
+  useReactFlow,
+  ReactFlowProvider,
+  type Node,
+  type Edge,
+  type FitViewOptions,
+  type OnConnect,
+  type OnNodesChange,
+  type OnEdgesChange,
+  type DefaultEdgeOptions,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+const nodeTypes = {
+  custom: CustomNode,
+}
+ 
+const initialNodes: Node[] = [
+  { id: '1', data: { label: 'Node 1' }, position: { x: 5, y: 5 } },
+  { id: '2', data: { label: 'Node 2' }, position: { x: 5, y: 100 } },
+  { id: '3', type: 'custom', data: { kind: 'text', text: 'Unique' }, position: { x: 5, y: 200 } },
+];
+ 
+const initialEdges: Edge[] = [{ id: 'e1-2', source: '1', target: '2' }];
+ 
+const fitViewOptions: FitViewOptions = {
+  padding: 0.2,
+};
+ 
+const defaultEdgeOptions: DefaultEdgeOptions = {
+  animated: true,
+};
+
+function Flow() {
+  const [nodes, setNodes] = useState(initialNodes);
+  const [edges, setEdges] = useState<Edge[]>(initialEdges);
+  const { screenToFlowPosition } = useReactFlow();
+
+  const onNodesChange: OnNodesChange = useCallback(
+    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    [],
+  );
+  const onEdgesChange: OnEdgesChange = useCallback(
+    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    [],
+  );
+  const onConnect: OnConnect = useCallback(
+    (connection) => setEdges((eds) => addEdge(connection, eds)),
+    [],
+  );
+
+  const onAdd = useCallback(
+    (kind: string) => {
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      const position = screenToFlowPosition({ x: centerX, y: centerY });
+
+      const newNode = {
+        id: `${Date.now()}`,
+        type: 'custom',
+        position,
+        data:
+          kind === 'number'
+            ? { kind: 'number', number: 0 }
+            : { kind: 'text', text: 'Unique' },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+    },
+    [screenToFlowPosition],
+  );
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+    <div className="w-screen h-screen relative">
+      <Toolbox onAdd={onAdd} />
 
-export default App
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        fitView
+        fitViewOptions={fitViewOptions}
+        defaultEdgeOptions={defaultEdgeOptions}
+      >
+        <Background />
+        <Controls />
+        <MiniMap />
+      </ReactFlow>
+    </div>
+  );
+}
+ 
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <Flow />
+    </ReactFlowProvider>
+  );
+}
