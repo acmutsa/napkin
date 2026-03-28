@@ -1,4 +1,3 @@
-import React, { type ComponentProps } from "react";
 import { type HandleProps } from "@xyflow/react";
 
 import { cn } from "@/lib/utils";
