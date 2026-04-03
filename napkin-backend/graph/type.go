@@ -11,6 +11,9 @@ type Node struct {
 type Edge struct {
 	From NodeID `json:"source"`
 	To   NodeID `json:"target"`
+	SourcePort string `json:"sourcePort,omitempty"`
+	TargetPort string `json:"targetPort,omitempty"`
+	Type string `json:"type,omitempty"`
 }
 
 type GraphJSON struct {
