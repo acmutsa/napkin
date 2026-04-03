@@ -57,4 +57,8 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 	return tfFile, nil
 }
 
+func (t *TerraformTarget) ToString() string {
+	return ""
+}
+
 var _ Target = (*TerraformTarget)(nil)
