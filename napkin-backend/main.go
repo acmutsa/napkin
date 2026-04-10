@@ -40,7 +40,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
+	terraformString := tfFile.String()
+	log.Println("Terraform file: ", terraformString)
 	err = compiler.WriteTerraformFile(tfFile, "output.tf")
 	if err != nil {
 		panic(err)

@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
-import CustomNode from './CustomNode';
-import Toolbox from './ToolBox';
+import { useState, useCallback } from "react";
+import Toolbox from "./ToolBox";
+import ResourceNode from "@/components/ResourceNode";
+import ResourceEdge from "@/components/ResourceEdge";
 import {
   ReactFlow,
   Background,
@@ -9,7 +10,6 @@ import {
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
-  useReactFlow,
   ReactFlowProvider,
   type Node,
   type Edge,
@@ -18,67 +18,124 @@ import {
   type OnNodesChange,
   type OnEdgesChange,
   type DefaultEdgeOptions,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 const nodeTypes = {
-  custom: CustomNode,
-}
- 
-const initialNodes: Node[] = [
-  { id: '1', data: { label: 'Node 1' }, position: { x: 5, y: 5 } },
-  { id: '2', data: { label: 'Node 2' }, position: { x: 5, y: 100 } },
-  { id: '3', type: 'custom', data: { kind: 'text', text: 'Unique' }, position: { x: 5, y: 200 } },
-];
- 
-const initialEdges: Edge[] = [{ id: 'e1-2', source: '1', target: '2' }];
- 
-const fitViewOptions: FitViewOptions = {
-  padding: 0.2,
+  resource: ResourceNode,
 };
- 
+const edgeTypes = {
+  resource: ResourceEdge,
+};
+
+const initialNodes: Node[] = [];
+const initialEdges: Edge[] = [];
+
+const fitViewOptions: FitViewOptions = { padding: 0.2 };
 const defaultEdgeOptions: DefaultEdgeOptions = {
+  type: "resource",  
   animated: true,
+  style: { strokeDasharray: "5 5", stroke: "#888" },
 };
 
 function Flow() {
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
-  const { screenToFlowPosition } = useReactFlow();
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    [],
+    []
   );
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    [],
+    []
   );
   const onConnect: OnConnect = useCallback(
     (connection) => setEdges((eds) => addEdge(connection, eds)),
-    [],
+    []
   );
 
   const onAdd = useCallback(
-    (kind: string) => {
-      const centerX = window.innerWidth / 2;
-      const centerY = window.innerHeight / 2;
-      const position = screenToFlowPosition({ x: centerX, y: centerY });
+  (kind: string) => {
+    let spec;
 
-      const newNode = {
-        id: `${Date.now()}`,
-        type: 'custom',
-        position,
-        data:
-          kind === 'number'
-            ? { kind: 'number', number: 0 }
-            : { kind: 'text', text: 'Unique' },
-      };
+    switch (kind) {
+      case "compute": // EC2 Instance
+        spec = {
+          label: "EC2 Instance",
+          color: "bg-blue-50 border-blue-200",
+          borderColor: "border-blue-200",
+          iconColor: "text-blue-400",
+          inputs: [
+            { id: "db-in", type: "data", label: "DB Connection" }, // from Database
+            { id: "traffic-in", type: "network", label: "Incoming Traffic" }, // from Load Balancer
+          ],
+          outputs: [
+            { id: "network-out", type: "network", label: "Network" }, // to Security Group / downstream
+            { id: "data-out", type: "data", label: "Storage Output" }, // to Storage Bucket
+          ],
+        };
+        break;
 
-      setNodes((nds) => [...nds, newNode]);
-    },
-    [screenToFlowPosition],
-  );
+      case "database":
+        spec = {
+          label: "Database",
+          color: "bg-green-50 border-green-200",
+          borderColor: "border-green-200",
+          iconColor: "text-green-400",
+          inputs: [], // no inputs
+          outputs: [{ id: "db-out", type: "data", label: "DB Output" }], // to EC2
+        };
+        break;
+
+      case "loadBalancer":
+        spec = {
+          label: "Load Balancer",
+          color: "bg-purple-50 border-purple-200",
+          borderColor: "border-purple-200",
+          iconColor: "text-purple-400",
+          inputs: [{ id: "traffic-in", type: "network", label: "Incoming Traffic" }], // from users / upstream
+          outputs: [{ id: "traffic-out", type: "network", label: "Forward Traffic" }], // to EC2 nodes
+        };
+        break;
+
+      case "securityGroup":
+        spec = {
+          label: "Security Group",
+          color: "bg-yellow-50 border-yellow-200",
+          borderColor: "border-yellow-200",
+          iconColor: "text-yellow-400",
+          inputs: [{ id: "inbound", type: "network", label: "Inbound" }], // from EC2 or Load Balancer
+          outputs: [{ id: "outbound", type: "network", label: "Outbound" }], // to EC2 / network nodes
+        };
+        break;
+
+      case "storageBucket":
+        spec = {
+          label: "Storage Bucket",
+          color: "bg-orange-50 border-orange-200",
+          borderColor: "border-orange-200",
+          iconColor: "text-orange-400",
+          inputs: [{ id: "data-in", type: "data", label: "Objects" }], // from EC2
+          outputs: [], // sink
+        };
+        break;
+
+      default:
+        return; // unknown kind
+    }
+
+    const newNode: Node = {
+      id: `${Date.now()}`,
+      type: "resource",
+      position: { x: 100, y: 100 }, // fixed starting position
+      data: { spec },
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+  },
+  []
+);
 
   return (
     <div className="w-screen h-screen relative">
@@ -88,6 +145,7 @@ function Flow() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -102,7 +160,7 @@ function Flow() {
     </div>
   );
 }
- 
+
 export default function App() {
   return (
     <ReactFlowProvider>

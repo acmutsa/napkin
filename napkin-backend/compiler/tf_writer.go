@@ -26,7 +26,7 @@ func writeBlock(builder *strings.Builder, block TFBlock, indent string) {
 	builder.WriteString(indent + "}\n")
 }
 
-func WriteTerraformFile(tf *TFFile, path string) error {
+func (tf *TFFile) String() string {
 	var builder strings.Builder
 
 	for _, block := range tf.Block {
@@ -34,5 +34,9 @@ func WriteTerraformFile(tf *TFFile, path string) error {
 		builder.WriteString("\n")
 	}
 
-	return os.WriteFile(path, []byte(builder.String()), 0644)
+	return builder.String()
+}
+
+func WriteTerraformFile(tf *TFFile, path string) error {
+	return os.WriteFile(path, []byte(tf.String()), 0644)
 }
