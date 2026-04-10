@@ -64,86 +64,86 @@ function Flow() {
   }, []);
 
   const onAdd = useCallback(
-    (kind: string) => {
-      let spec;
+  (kind: string) => {
+    let spec;
 
-      switch (kind) {
-        case "compute":
-          spec = {
-            label: "EC2 Instance",
-            color: "bg-blue-50 border-blue-200",
-            borderColor: "border-blue-200",
-            iconColor: "text-blue-400",
-            inputs: [
-              { id: "db-in", type: "data", label: "DB Connection" },
-              { id: "traffic-in", type: "network", label: "Incoming Traffic" },
-            ],
-            outputs: [
-              { id: "network-out", type: "network", label: "Network" },
-              { id: "data-out", type: "data", label: "Storage Output" },
-            ],
-          };
-          break;
+    switch (kind) {
+      case "compute": // EC2 Instance
+        spec = {
+          label: "EC2 Instance",
+          color: "bg-blue-50 border-blue-200",
+          borderColor: "border-blue-200",
+          iconColor: "text-blue-400",
+          inputs: [
+            { id: "db-in", type: "data", label: "DB Connection" }, // from Database
+            { id: "traffic-in", type: "network", label: "Incoming Traffic" }, // from Load Balancer
+          ],
+          outputs: [
+            { id: "network-out", type: "network", label: "Network" }, // to Security Group / downstream
+            { id: "data-out", type: "data", label: "Storage Output" }, // to Storage Bucket
+          ],
+        };
+        break;
 
-        case "database":
-          spec = {
-            label: "Database",
-            color: "bg-green-50 border-green-200",
-            borderColor: "border-green-200",
-            iconColor: "text-green-400",
-            inputs: [],
-            outputs: [{ id: "db-out", type: "data", label: "DB Output" }],
-          };
-          break;
+      case "database":
+        spec = {
+          label: "Database",
+          color: "bg-green-50 border-green-200",
+          borderColor: "border-green-200",
+          iconColor: "text-green-400",
+          inputs: [], // no inputs
+          outputs: [{ id: "db-out", type: "data", label: "DB Output" }], // to EC2
+        };
+        break;
 
-        case "loadBalancer":
-          spec = {
-            label: "Load Balancer",
-            color: "bg-purple-50 border-purple-200",
-            borderColor: "border-purple-200",
-            iconColor: "text-purple-400",
-            inputs: [{ id: "traffic-in", type: "network", label: "Incoming Traffic" }],
-            outputs: [{ id: "traffic-out", type: "network", label: "Forward Traffic" }],
-          };
-          break;
+      case "loadBalancer":
+        spec = {
+          label: "Load Balancer",
+          color: "bg-purple-50 border-purple-200",
+          borderColor: "border-purple-200",
+          iconColor: "text-purple-400",
+          inputs: [{ id: "traffic-in", type: "network", label: "Incoming Traffic" }], // from users / upstream
+          outputs: [{ id: "traffic-out", type: "network", label: "Forward Traffic" }], // to EC2 nodes
+        };
+        break;
 
-        case "securityGroup":
-          spec = {
-            label: "Security Group",
-            color: "bg-yellow-50 border-yellow-200",
-            borderColor: "border-yellow-200",
-            iconColor: "text-yellow-400",
-            inputs: [{ id: "inbound", type: "network", label: "Inbound" }],
-            outputs: [{ id: "outbound", type: "network", label: "Outbound" }],
-          };
-          break;
+      case "securityGroup":
+        spec = {
+          label: "Security Group",
+          color: "bg-yellow-50 border-yellow-200",
+          borderColor: "border-yellow-200",
+          iconColor: "text-yellow-400",
+          inputs: [{ id: "inbound", type: "network", label: "Inbound" }], // from EC2 or Load Balancer
+          outputs: [{ id: "outbound", type: "network", label: "Outbound" }], // to EC2 / network nodes
+        };
+        break;
 
-        case "storageBucket":
-          spec = {
-            label: "Storage Bucket",
-            color: "bg-orange-50 border-orange-200",
-            borderColor: "border-orange-200",
-            iconColor: "text-orange-400",
-            inputs: [{ id: "data-in", type: "data", label: "Objects" }],
-            outputs: [],
-          };
-          break;
+      case "storageBucket":
+        spec = {
+          label: "Storage Bucket",
+          color: "bg-orange-50 border-orange-200",
+          borderColor: "border-orange-200",
+          iconColor: "text-orange-400",
+          inputs: [{ id: "data-in", type: "data", label: "Objects" }], // from EC2
+          outputs: [], // sink
+        };
+        break;
 
-        default:
-          return;
-      }
+      default:
+        return; // unknown kind
+    }
 
-      const newNode: Node = {
-        id: `${Date.now()}`,
-        type: "resource",
-        position: { x: 100, y: 100 },
-        data: { spec },
-      };
+    const newNode: Node = {
+      id: `${Date.now()}`,
+      type: "resource",
+      position: { x: 100, y: 100 }, // fixed starting position
+      data: { spec },
+    };
 
-      setNodes((nds) => [...nds, newNode]);
-    },
-    []
-  );
+    setNodes((nds) => [...nds, newNode]);
+  },
+  []
+);
 
   const nodesWithErrors = nodes.map((node) => ({
     ...node,
