@@ -3,7 +3,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true
   },
   "files": [],
   "references": [
