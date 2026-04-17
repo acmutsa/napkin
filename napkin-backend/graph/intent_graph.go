@@ -94,3 +94,22 @@ func (ig *IntentGraph) RemoveEdge(from, to NodeID) error {
 	}
 	return errors.New("edge not found")
 }
+
+func (ig *IntentGraph) GetNodes() []Node {
+	result := make([]Node, 0, len(ig.Nodes))
+	for _, node := range ig.Nodes {
+		result = append(result, node)
+	}
+	return result
+}
+
+func (ig *IntentGraph) GetNeighborIDs(id NodeID) []NodeID {
+	result := []NodeID{}
+
+	for _, edge := range ig.Edges {
+		if edge.From == id {
+			result = append(result, edge.To)
+		}
+	}
+	return result
+}

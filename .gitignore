@@ -37,3 +37,6 @@ napkin-backend/tmp/
 # Test coverage
 coverage/
 *.out
+
+napkin-backend
+output.tf

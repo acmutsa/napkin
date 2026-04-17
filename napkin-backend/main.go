@@ -54,6 +54,8 @@ func main() {
 	// API Routes
 	mux.HandleFunc("GET /health", handlers.HealthHandler)
 	mux.HandleFunc("GET /api/hello", handlers.HelloHandler)
+	mux.HandleFunc("POST /api/compile", handlers.CompileHandler)
+	mux.HandleFunc("POST /api/analyze", handlers.AnalyzeHandler)
 
 	// Serve static files in production
 	static.SetupStaticHandler(mux)
