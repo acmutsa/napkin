@@ -8,7 +8,13 @@ import (
 )
 
 type AnalyzeRequest struct {
-	IntentGraph json.RawMessage `json:"intentGraph"`
+	Type  string          `json:"type"`
+	Graph json.RawMessage `json:"graph"`
+}
+
+type ResponseError struct {
+	NodeId string `json:"nodeId"`
+	Message string `json:"message"`
 }
 
 func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
@@ -24,13 +30,9 @@ func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.IntentGraph) == 0 {
-		http.Error(w, "Missing intentGraph", http.StatusBadRequest)
-		return
-	}
-
 	ig := graph.NewIntentGraph()
-	err = ig.FromJSON(req.IntentGraph)
+
+	err = ig.FromJSON(req.Graph)
 	if err != nil {
 		http.Error(w, "Invalid graph format", http.StatusBadRequest)
 		return
@@ -57,4 +59,51 @@ func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		"performanceErrors":          performanceErrors,
 		"performanceAnnotations":     performanceAnnotations,
 	})
+}
+
+func TestAnalyzeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req AnalyzeRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	ig := graph.NewIntentGraph()
+
+	err = ig.FromJSON(req.Graph)
+	if err != nil {
+		http.Error(w, "Invalid graph format", http.StatusBadRequest)
+		return
+	}
+
+	var allErrors []ResponseError
+
+    for _, node := range ig.Nodes {
+        spec, ok := node.Spec.(map[string]any)
+        if ok && spec["label"] == "EC2 Instance" {
+            allErrors = append(allErrors, ResponseError{
+                NodeId:  string(node.ID),
+                Message: "Security Risk: Instance is publicly accessible!",
+            })
+        }
+        
+        if ok && spec["label"] == "Database" {
+            allErrors = append(allErrors, ResponseError{
+                NodeId:  string(node.ID),
+                Message: "Performance Warning: High latency detected.",
+            })
+        }
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]any{
+        "success": true,
+        "errors":  allErrors,
+    })
 }

@@ -8,9 +8,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { type AnalyzeError } from "@/lib/types/errors";
+
 
 interface FloatingMenuProps {
-  onAnalyzeError: (nodeId: string | null, message: string) => void;
+  onAnalyze: (analysisType: string) => Promise<AnalyzeError[]>;
 }
 
 type CompileError = {
@@ -18,25 +20,23 @@ type CompileError = {
   message: string;
 };
 
-export default function FloatingMenu({ onAnalyzeError }: FloatingMenuProps) {
+export default function FloatingMenu({ onAnalyze }: FloatingMenuProps) {
   const [analysisType, setAnalysisType] = useState("Network");
   const [compileTarget, setCompileTarget] = useState("Terraform");
   const [compileErrors, setCompileErrors] = useState<CompileError[]>([]);
+  const [analyzeErrors, setAnalyzeErrors] = useState<AnalyzeError[]>([]);
+  const [analyzeVisible, setAnalyzeVisible] = useState(false);
   const [errorsVisible, setErrorsVisible] = useState(false);
 
   async function handleAnalyze() {
-    try {
-      const res = await fetch("/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: analysisType }),
-      });
-      const data = await res.json();
-      data.errors?.forEach(({ nodeId, message }: { nodeId: string | null; message: string }) => {
-        onAnalyzeError(nodeId, message);
-      });
-    } catch (err) {
-      onAnalyzeError(null, (err as Error).message);
+    setAnalyzeVisible(false);
+    setAnalyzeErrors([]);
+
+    const errors = await onAnalyze(analysisType);
+    
+    if (errors.length > 0) {
+      setAnalyzeErrors(errors);
+      setAnalyzeVisible(true);
     }
   }
 
@@ -121,6 +121,32 @@ export default function FloatingMenu({ onAnalyzeError }: FloatingMenuProps) {
                   ? "border-yellow-200 bg-yellow-50 text-yellow-800"
                   : "border-red-200 bg-red-50 text-red-800"
               }`}
+            >
+              <span className="font-medium capitalize">{err.severity}: </span>
+              {err.message}
+            </div>
+          ))}
+        </div>
+      )}
+      {analyzeVisible && analyzeErrors.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl shadow-md p-3 flex flex-col gap-2 max-h-64 overflow-y-auto">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">
+              Analyze · {analyzeErrors.length} issue{analyzeErrors.length !== 1 ? "s" : ""}
+            </span>
+
+            <button
+              onClick={() => setAnalyzeVisible(false)}
+              className="text-gray-400 hover:text-gray-600 text-sm"
+            >
+              ✕
+            </button>
+          </div>
+
+          {analyzeErrors.map((err, i) => (
+            <div
+              key={i}
+              className="rounded-lg border p-3 text-sm border-red-200 bg-red-50 text-red-800"
             >
               <span className="font-medium capitalize">{err.severity}: </span>
               {err.message}

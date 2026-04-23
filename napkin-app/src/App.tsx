@@ -22,6 +22,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { transformNodes } from "@/lib/transformer/transformer";
+import { type AnalyzeError } from "./lib/types/errors";
+
 const nodeTypes = {
   resource: ResourceNode,
 };
@@ -37,6 +40,11 @@ const defaultEdgeOptions: DefaultEdgeOptions = {
   type: "resource",
   animated: true,
   style: { strokeDasharray: "5 5", stroke: "#888" },
+};
+
+type BackendError = {
+  nodeId?: string | null;
+  message: string;
 };
 
 function Flow() {
@@ -62,6 +70,54 @@ function Flow() {
       setNodeErrors((prev) => ({ ...prev, [nodeId]: message }));
     }
   }, []);
+
+  const handleAnalyze = useCallback(
+    async (analysisType: string): Promise<AnalyzeError[]> => {
+      const graph = transformNodes(nodes, edges);
+      setNodeErrors({});
+
+      try {
+        const res = await fetch("http://localhost:8080/api/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: analysisType,
+            graph,
+          }),
+        });
+
+        const data = await res.json();
+        const menuError: AnalyzeError[] = [];
+
+        const newNodeErrors: Record<string, string> = {};
+
+        data.errors?.forEach((err: BackendError) => {
+          if (err.nodeId) {
+            newNodeErrors[err.nodeId] = err.message;
+          } else {
+            menuError.push({
+              severity: "error",
+              message: err.message,
+            });
+          }
+        });
+
+        setNodeErrors(newNodeErrors)
+
+        return menuError;
+      } catch (error) {
+        return [
+          {
+            severity: "error",
+            message: (error as Error).message,
+          }
+        ]
+      }
+    },
+    [nodes, edges, handleAnalyzeError]
+  );
 
   const onAdd = useCallback(
   (kind: string) => {
@@ -156,8 +212,9 @@ function Flow() {
   return (
     <div className="w-screen h-screen relative">
       <Toolbox onAdd={onAdd} />
-      <FloatingMenu onAnalyzeError={handleAnalyzeError} />
-
+      <FloatingMenu 
+        onAnalyze={handleAnalyze}
+      />
       <ReactFlow
         nodes={nodesWithErrors}
         edges={edges}
