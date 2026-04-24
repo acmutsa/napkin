@@ -93,3 +93,11 @@ func (g *DirectedGraph) HasEdge(from, to NodeID) bool {
 	_, exists := neighbors[to]
 	return exists
 }
+
+func (g *DirectedGraph) GetNodes() map[NodeID]Node {
+	return g.nodes
+}
+
+func (g *DirectedGraph) GetEdges() map[NodeID]map[NodeID]struct{} {
+	return g.edges
+}
