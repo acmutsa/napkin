@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import Toolbox from "./ToolBox";
 import ResourceNode from "@/components/ResourceNode";
 import ResourceEdge from "@/components/ResourceEdge";
+import FloatingMenu from "@/components/FloatingMenu";
 import {
   ReactFlow,
   Background,
@@ -10,7 +11,6 @@ import {
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
-  useReactFlow,
   ReactFlowProvider,
   type Node,
   type Edge,
@@ -34,7 +34,7 @@ const initialEdges: Edge[] = [];
 
 const fitViewOptions: FitViewOptions = { padding: 0.2 };
 const defaultEdgeOptions: DefaultEdgeOptions = {
-  type: "resource",  
+  type: "resource",
   animated: true,
   style: { strokeDasharray: "5 5", stroke: "#888" },
 };
@@ -42,7 +42,7 @@ const defaultEdgeOptions: DefaultEdgeOptions = {
 function Flow() {
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
-  const { screenToFlowPosition } = useReactFlow();
+  const [nodeErrors, setNodeErrors] = useState<Record<string, string>>({});
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -56,6 +56,12 @@ function Flow() {
     (connection) => setEdges((eds) => addEdge(connection, eds)),
     []
   );
+
+  const handleAnalyzeError = useCallback((nodeId: string | null, message: string) => {
+    if (nodeId) {
+      setNodeErrors((prev) => ({ ...prev, [nodeId]: message }));
+    }
+  }, []);
 
   const onAdd = useCallback(
   (kind: string) => {
@@ -134,7 +140,7 @@ function Flow() {
       data: {
         spec,
         attributes: {},
-    },
+      },
     };
 
     setNodes((nds) => [...nds, newNode]);
@@ -142,12 +148,21 @@ function Flow() {
   []
 );
 
+  const nodesWithErrors = nodes.map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      error: nodeErrors[node.id] ?? null,
+    },
+  }));
+
   return (
     <div className="w-screen h-screen relative">
       <Toolbox onAdd={onAdd} />
+      <FloatingMenu onAnalyzeError={handleAnalyzeError} />
 
       <ReactFlow
-        nodes={nodes}
+        nodes={nodesWithErrors}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

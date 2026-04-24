@@ -117,6 +117,8 @@ export default function ResourceNode({ id, data }: ResourceNodeProps) {
           variant="ghost"
           className="nodrag p-1 !bg-transparent hover:bg-gray-200/20"
           onClick={handleDelete}
+          aria-label="Delete Node"
+          title="Delete Node"
         >
           <Trash className={`size-4 ${spec.iconColor}`} />
         </Button>
