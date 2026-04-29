@@ -137,7 +137,10 @@ function Flow() {
       id: `${Date.now()}`,
       type: "resource",
       position: { x: 100, y: 100 }, // fixed starting position
-      data: { spec },
+      data: {
+        spec,
+        attributes: {},
+      },
     };
 
     setNodes((nds) => [...nds, newNode]);
