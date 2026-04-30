@@ -41,14 +41,14 @@ func CompileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ig graph.IntentGraph
+	ig := graph.NewIntentGraph()
 	err = ig.FromJSON(req.IntentGraph)
 	if err != nil {
 		http.Error(w, "Invalid graph format", http.StatusBadRequest)
 		return
 	}
 
-	ir, err := IntentGraphToIR(&ig)
+	ir, err := IntentGraphToIR(ig)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

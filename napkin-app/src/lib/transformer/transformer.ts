@@ -7,14 +7,28 @@ type TransformedEdge = {
 };
 
 type TransformResult = {
-  nodes: Record<string, any[]>;
+  nodes: Record<string, unknown[]>;
   edges: TransformedEdge[];
 };
 
+type NodeSpecLike = Record<string, unknown> & { label?: string };
+
+/** Maps canvas labels to Terraform resource types for compile IR. */
+function terraformTypeFromSpecLabel(label: string): string {
+  const map: Record<string, string> = {
+    "EC2 Instance": "aws_instance",
+    Database: "aws_db_instance",
+    "Load Balancer": "aws_lb",
+    "Security Group": "aws_security_group",
+    "Storage Bucket": "aws_s3_bucket",
+  };
+  return map[label] ?? "aws_instance";
+}
+
 export function transformNodes(nodeMap: Node[], edges: Edge[]) {
   const result: TransformResult = {
-    nodes: {} as Record<string, any[]>,
-    edges: [] as any[]
+    nodes: {},
+    edges: [],
   };
 
   // process the nodes
@@ -25,12 +39,25 @@ export function transformNodes(nodeMap: Node[], edges: Edge[]) {
       result.nodes[type] = [];
     }
 
+    const data = node.data as {
+      spec?: NodeSpecLike;
+      attributes?: Record<string, string>;
+    } | null;
+    const baseSpec =
+      data?.spec && typeof data.spec === "object" ? { ...data.spec } : {};
+
+    const label = typeof baseSpec.label === "string" ? baseSpec.label : "";
+
     result.nodes[type].push({
       id: node.id,
-      ...node.data   // assuming this works, if not then TODO: create mapping layer
+      spec: {
+        ...baseSpec,
+        class: type,
+        type: terraformTypeFromSpecLabel(label),
+      },
+      ...(data?.attributes ? { attributes: data.attributes } : {}),
     });
   });
-
 
   // Build lookup map for nodes for easier edge processing
   const nodeById = new Map<string, Node>();
@@ -43,7 +70,6 @@ export function transformNodes(nodeMap: Node[], edges: Edge[]) {
     const sourceNode = nodeById.get(edge.source);
     const targetNode = nodeById.get(edge.target);
 
-    
     // error catching
     if (!sourceNode || !targetNode) {
       console.warn("Invalid edge (missing node)", edge);
@@ -59,14 +85,14 @@ export function transformNodes(nodeMap: Node[], edges: Edge[]) {
       source: {
         node: sourceNode.type,
         id: sourceNode.id,
-        port: edge.sourceHandle ?? undefined
+        port: edge.sourceHandle ?? undefined,
       },
       target: {
         node: targetNode.type,
         id: targetNode.id,
-        port: edge.targetHandle ?? undefined
+        port: edge.targetHandle ?? undefined,
       },
-      type: "data-flow" // could be dynamic later, hard coding for right now
+      type: "data-flow", // could be dynamic later, hard coding for right now
     });
   });
 

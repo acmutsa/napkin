@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import Toolbox from "./ToolBox";
 import ResourceNode from "@/components/ResourceNode";
 import ResourceEdge from "@/components/ResourceEdge";
@@ -119,6 +119,11 @@ function Flow() {
     [nodes, edges, handleAnalyzeError]
   );
 
+  const intentGraph = useMemo(
+    () => transformNodes(nodes, edges),
+    [nodes, edges],
+  );
+
   const onAdd = useCallback(
   (kind: string) => {
     let spec;
@@ -215,9 +220,7 @@ function Flow() {
   return (
     <div className="w-screen h-screen relative">
       <Toolbox onAdd={onAdd} />
-      <FloatingMenu 
-        onAnalyze={handleAnalyze}
-      />
+      <FloatingMenu onAnalyze={handleAnalyze} intentGraph={intentGraph} />
       <ReactFlow
         nodes={nodesWithErrors}
         edges={edges}
