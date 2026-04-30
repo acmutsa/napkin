@@ -1,56 +1,57 @@
 package handlers
 
 import (
-	"errors"
 	"fmt"
 	"napkin-backend/compiler"
 	"napkin-backend/graph"
 )
 
 func IntentGraphToIR(ig *graph.IntentGraph) (compiler.IR, error) {
-	ir := compiler.IR{
-		Nodes: []compiler.GraphNode{},
-	}
+    ir := compiler.IR{
+        Nodes: []compiler.GraphNode{},
+    }
 
-	nodes := ig.GetNodes()
+    for _, node := range ig.GetNodes() {
+        specMap, ok := node.Spec.(map[string]any)
+        if !ok {
+            specMap = make(map[string]any)
+        }
 
-	for _, node := range nodes {
-		classVal, exists := node.Data["class"]
-		if !exists {
-			return ir, errors.New("missing class in node")
-		}
+        classVal, exists := specMap["class"]
+        if !exists {
+            return ir, fmt.Errorf("node %s missing class in spec", node.ID)
+        }
+        classStr, ok := classVal.(string)
+        if !ok {
+            return ir, fmt.Errorf("node %s class must be a string", node.ID)
+        }
 
-		classStr, ok := classVal.(string)
-		if !ok {
-			return ir, errors.New("class must be a string")
-		}
+        attrs := map[string]string{}
+        for attrName, dataVal := range specMap {
+            if attrName == "class" {
+                continue
+            }
+            attrs[attrName] = fmt.Sprint(dataVal)
+        }
 
-		class := compiler.NodeClass(classStr)
+        gNode := compiler.GraphNode{
+            ID:         string(node.ID),
+            Class:      compiler.NodeClass(classStr),
+            Type:       fmt.Sprint(specMap["type"]), 
+            Attributes: attrs,
+            Edges:      toStringSlice(ig.GetNeighborIDs(node.ID)),
+        }
 
-		attrs := map[string]string{}
-		for attrName, dataVal := range node.Data {
-			if attrName == "class" {
-				continue
-			}
-			attrs[attrName] = fmt.Sprint(dataVal)
-		}
+        ir.Nodes = append(ir.Nodes, gNode)
+    }
 
-		edges := ig.GetNeighborIDs(node.ID)
-		edgeStrings := []string{}
-		for _, edge := range edges {
-			edgeStrings = append(edgeStrings, string(edge))
-		}
+    return ir, nil
+}
 
-		gNode := compiler.GraphNode{
-			ID:         string(node.ID),
-			Class:      class,
-			Type:       node.Type,
-			Attributes: attrs,
-			Edges:      edgeStrings,
-		}
-
-		ir.Nodes = append(ir.Nodes, gNode)
-	}
-
-	return ir, nil
+func toStringSlice(ids []graph.NodeID) []string {
+    s := make([]string, len(ids))
+    for i, id := range ids {
+        s[i] = string(id)
+    }
+    return s
 }

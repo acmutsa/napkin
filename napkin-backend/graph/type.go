@@ -3,33 +3,36 @@ package graph
 type NodeID string
 
 type Node struct {
-	ID   NodeID         `json:"id"`
-	Type string         `json:"type"`
-	Data map[string]any `json:"data"`
+	ID   NodeID `json:"id"`
+	Spec any    `json:"spec"`
 }
 
 type Edge struct {
-	From NodeID `json:"source"`
-	To   NodeID `json:"target"`
-	SourcePort string `json:"sourcePort,omitempty"`
-	TargetPort string `json:"targetPort,omitempty"`
-	Type string `json:"type,omitempty"`
+	Source struct {
+		Node string `json:"node"`
+		ID   NodeID `json:"id"`
+		Port string `json:"port"`
+	} `json:"source"`
+	Target struct {
+		Node string `json:"node"`
+		ID   NodeID `json:"id"`
+		Port string `json:"port"`
+	} `json:"target"`
+	Type string `json:"type"`
+}
+
+type InnerGraph struct {
+    Nodes map[string][]Node `json:"nodes"`
+    Edges []Edge            `json:"edges"`
 }
 
 type GraphJSON struct {
-	Nodes []Node `json:"nodes"`
-	Edges []Edge `json:"edges"`
+    Type  string     `json:"type"`
+    Graph InnerGraph `json:"graph"`
 }
 
-type Graph interface {
-	FromJSON(data []byte) error
-
-	AddNode(node Node) error
-	AddEdge(edge Edge) error
-
-	HasNode(id NodeID) bool
-	HasEdge(from, to NodeID) bool
-
-	RemoveNode(id NodeID) error
-	RemoveEdge(from, to NodeID) error
+type NodeSpec struct {
+	Label       string `json:"label"`
+	Color       string `json:"color"`
+	BorderColor string `json:"borderColor"`
 }
