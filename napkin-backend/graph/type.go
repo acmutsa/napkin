@@ -4,8 +4,15 @@ type NodeID string
 
 type Node struct {
 	ID         NodeID            `json:"id"`
+	Kind       NodeKind          `json:"kind,omitempty"`
 	Spec       any               `json:"spec"`
 	Attributes map[string]string `json:"attributes,omitempty"`
+	Ports      PortTopology      `json:"ports,omitempty"`
+}
+
+type PortTopology struct {
+	Inputs  []PortDef `json:"inputs,omitempty"`
+	Outputs []PortDef `json:"outputs,omitempty"`
 }
 
 type Edge struct {
@@ -23,8 +30,9 @@ type Edge struct {
 }
 
 type InnerGraph struct {
-    Nodes map[string][]Node `json:"nodes"`
-    Edges []Edge            `json:"edges"`
+	Region string            `json:"region,omitempty"`
+	Nodes  map[string][]Node `json:"nodes"`
+	Edges  []Edge            `json:"edges"`
 }
 
 type GraphJSON struct {

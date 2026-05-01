@@ -39,8 +39,7 @@ func IntentGraphToIR(ig *graph.IntentGraph) (compiler.IR, error) {
 			return compiler.IR{}, fmt.Errorf("node %s missing type in spec", node.ID)
 		}
 
-		attrs := terraformAttrsFromWhitelist(specMap)
-
+		attrs := map[string]string{}
 		for k, v := range node.Attributes {
 			if k == "" || isMetaAttributeKey(k) {
 				continue
@@ -48,10 +47,10 @@ func IntentGraphToIR(ig *graph.IntentGraph) (compiler.IR, error) {
 			attrs[k] = v
 		}
 
-		exprAttrs := map[string]string{}
-		applyTerraformDefaults(tfType, attrs, exprAttrs)
-
 		ln := localNames[string(node.ID)]
+
+		exprAttrs := exprDefaultsForKind(node.Kind, attrs)
+		applyLocalNameDefaults(tfType, ln, attrs)
 
 		var exprOut map[string]string
 		if len(exprAttrs) > 0 {
@@ -78,22 +77,7 @@ func IntentGraphToIR(ig *graph.IntentGraph) (compiler.IR, error) {
 		})
 	}
 
-	return compiler.IR{Nodes: irNodes, Edges: directed}, nil
-}
-
-// terraformAttrsFromWhitelist copies only explicit Terraform argument keys from spec.
-// type, class, label are handled elsewhere and must never become resource attributes.
-func terraformAttrsFromWhitelist(specMap map[string]any) map[string]string {
-	allowed := map[string]struct{}{
-		// extend when canvas sends TF keys through spec
-	}
-	out := map[string]string{}
-	for k := range allowed {
-		if v, ok := specMap[k]; ok {
-			out[k] = fmt.Sprint(v)
-		}
-	}
-	return out
+	return compiler.IR{Region: ig.Region, Nodes: irNodes, Edges: directed}, nil
 }
 
 // isMetaAttributeKey drops canvas/IR keys users might paste into the attribute editor.
@@ -106,34 +90,41 @@ func isMetaAttributeKey(k string) bool {
 	}
 }
 
-func applyTerraformDefaults(tfType string, attrs map[string]string, exprAttrs map[string]string) {
-	switch tfType {
-	case "aws_instance":
-		if attrs["ami"] == "" {
-			attrs["ami"] = "ami-123"
+// exprDefaultsForKind returns the HCL-expression defaults registered for a kind,
+// filtered to keys not already present in attrs (a user-supplied plain attr wins).
+func exprDefaultsForKind(kind graph.NodeKind, attrs map[string]string) map[string]string {
+	def, ok := graph.Registry[kind]
+	if !ok || len(def.ExprDefaults) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(def.ExprDefaults))
+	for k, v := range def.ExprDefaults {
+		if _, set := attrs[k]; set {
+			continue
 		}
-		if attrs["instance_type"] == "" {
-			attrs["instance_type"] = "t2.micro"
-		}
+		out[k] = v
+	}
+	return out
+}
 
-	case "aws_db_instance":
-		if attrs["engine"] == "" {
-			attrs["engine"] = "mysql"
+// applyLocalNameDefaults handles the small set of defaults that depend on the
+// assigned Terraform local name (and so cannot live in the static Registry).
+func applyLocalNameDefaults(tfType string, localName string, attrs map[string]string) {
+	switch tfType {
+	case "aws_lb":
+		if attrs["name_prefix"] == "" && attrs["name"] == "" {
+			prefix := localName
+			if len(prefix) > 6 {
+				prefix = prefix[:6]
+			}
+			if prefix == "" {
+				prefix = "nk"
+			}
+			attrs["name_prefix"] = prefix
 		}
-		if attrs["instance_class"] == "" {
-			attrs["instance_class"] = "db.t3.micro"
-		}
-		if attrs["username"] == "" {
-			attrs["username"] = "admin"
-		}
-		if attrs["password"] == "" {
-			attrs["password"] = "changeme_replace_in_prod"
-		}
-		if attrs["allocated_storage"] == "" && exprAttrs["allocated_storage"] == "" {
-			exprAttrs["allocated_storage"] = "20"
-		}
-		if attrs["skip_final_snapshot"] == "" && exprAttrs["skip_final_snapshot"] == "" {
-			exprAttrs["skip_final_snapshot"] = "true"
+	case "aws_s3_bucket":
+		if attrs["bucket_prefix"] == "" {
+			attrs["bucket_prefix"] = localName + "-"
 		}
 	}
 }

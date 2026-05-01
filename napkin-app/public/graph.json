@@ -1,60 +1,78 @@
 {
-  "title": "Spring '26 Schema",
-  "type": "object",
-  "properties": {
-  "nodes": {
-    "Server": {
-      "type": "ec2",
-      "properties": {
-        "id": "string",
-        "name": "string",
-        "instanceType": "string",
-        "region": "string"
-      },
-      "ports": {
-        "inputs": {
-          "in-env": "data",
-          "in-network": "network"
+  "title": "Napkin IntentGraph schema",
+  "description": "Reference shape of an IntentGraph as sent by the canvas to /api/compile and /api/analyze. The backend Normalize() step backfills any omitted defaults and ports from the kind registry (napkin-backend/graph/kinds.go).",
+  "version": "2",
+  "portTypes": ["network", "data", "env", "iam"],
+  "kinds": [
+    "compute",
+    "database",
+    "loadBalancer",
+    "securityGroup",
+    "storageBucket",
+    "vpc",
+    "subnet",
+    "iamRole",
+    "lambda",
+    "sqsQueue"
+  ],
+  "example": {
+    "region": "us-east-1",
+    "nodes": {
+      "resource": [
+        {
+          "id": "ec2-01",
+          "kind": "compute",
+          "spec": {
+            "label": "EC2 Instance",
+            "class": "resource",
+            "type": "aws_instance"
+          },
+          "ports": {
+            "inputs": [
+              { "id": "in-network", "type": "network", "label": "Incoming Traffic" },
+              { "id": "in-env", "type": "env", "label": "Environment" },
+              { "id": "in-iam", "type": "iam", "label": "IAM Role" }
+            ],
+            "outputs": [
+              { "id": "out-network", "type": "network", "label": "Outbound Traffic" },
+              { "id": "out-data", "type": "data", "label": "Data Out" }
+            ]
+          },
+          "attributes": {
+            "instance_type": "t2.micro"
+          }
         },
-        "outputs": {
-          "out-network": "network",
-          "out-data": "data"
+        {
+          "id": "db-01",
+          "kind": "database",
+          "spec": {
+            "label": "Database",
+            "class": "resource",
+            "type": "aws_db_instance"
+          },
+          "ports": {
+            "inputs": [
+              { "id": "in-network", "type": "network", "label": "Network" },
+              { "id": "in-env", "type": "env", "label": "Configuration" }
+            ],
+            "outputs": [
+              { "id": "out-data", "type": "data", "label": "Connection" }
+            ]
+          },
+          "attributes": {
+            "engine": "mysql",
+            "instance_class": "db.t3.micro",
+            "username": "admin"
+          }
         }
-      }
+      ]
     },
-    "Database": {
-      "properties": {
-        "id": "string",
-        "name": "string",
-        "engine": {
-          "type": "string",
-          "enum": ["mysql", "postgres", "mongodb", "oracle"] 
-        },
-        "storageSize": "number",
-        "region": "string"
-      },
-      "ports": {
-        "inputs": {
-          "in-network": "network"
-        },
-        "outputs": {
-          "out-conn": "data"
-        }
+    "edges": [
+      {
+        "source": { "node": "resource", "id": "ec2-01", "port": "out-data" },
+        "target": { "node": "resource", "id": "db-01", "port": "in-network" },
+        "type": "data-flow"
       }
-    }
-  },
-  "edges": {
-    "ServerToDatabase": {
-      "source": {
-        "node": "Server",
-        "port": "out-data"
-      },
-      "target": {
-        "node": "Database",
-        "port": "in-network"
-      },
-      "type": "data-flow"
-    }
+    ]
   }
- }
 }

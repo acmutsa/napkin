@@ -19,6 +19,7 @@ import {
 import { AlertCircle, Check, Copy, X } from "lucide-react";
 import { type AnalyzeError } from "@/lib/types/errors";
 import { transformNodes } from "@/lib/transformer/transformer";
+import { apiBase } from "@/lib/apiBase";
 
 type IntentGraphPayload = ReturnType<typeof transformNodes>;
 
@@ -68,7 +69,7 @@ export default function FloatingMenu({
         intentGraph,
         target: compileTarget.toLowerCase(),
       };
-      const res = await fetch("http://localhost:8080/api/compile", {
+      const res = await fetch(`${apiBase()}/api/compile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(compileBody),

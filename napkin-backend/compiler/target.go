@@ -26,6 +26,8 @@ type TFModule struct {
 }
 
 type TFBlock struct {
+	// RawLine, when non-empty, is emitted as a single line (e.g. section banners). No braces.
+	RawLine        string
 	Class          string
 	Labels         []string
 	Attributes     map[string]string // string literals (quoted in HCL)
@@ -53,8 +55,9 @@ type GraphNode struct {
 }
 
 type IR struct {
-	Nodes []GraphNode
-	Edges []DirectedEdge
+	Region string // AWS region; default us-east-1 when empty
+	Nodes  []GraphNode
+	Edges  []DirectedEdge
 }
 
 type Target interface {

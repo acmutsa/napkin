@@ -1,35 +1,25 @@
-type NodeItem = {
-  kind: string;
-  label: string;
-  description: string;
-};
+import { KIND_LIST } from "@/lib/kinds";
 
 type ToolboxProps = {
   onAdd: (kind: string) => void;
 };
 
-const nodeItems: NodeItem[] = [
-  { kind: 'compute', label: 'EC2 Instance', description: 'Virtual server' },
-  { kind: 'database', label: 'Database', description: 'Database node' },
-  { kind: 'loadBalancer', label: 'Load Balancer', description: 'Distributes traffic' },
-  { kind: 'securityGroup', label: 'Security Group', description: 'Firewall rules' },
-  { kind: 'storageBucket', label: 'Storage Bucket', description: 'Object storage' },
-];
-
 export default function Toolbox({ onAdd }: ToolboxProps) {
   return (
-    <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 bg-white border border-gray-200 rounded-xl shadow-md p-3 min-w-[130px]">
+    <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 bg-white border border-gray-200 rounded-xl shadow-md p-3 min-w-[150px] max-h-[80vh] overflow-y-auto">
       <p className="text-[10px] uppercase tracking-widest text-gray-400 mb-1 px-1">
         Nodes
       </p>
 
-      {nodeItems.map((node) => (
+      {KIND_LIST.map((node) => (
         <div
           key={node.kind}
           onClick={() => onAdd(node.kind)}
           className="flex flex-col px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 cursor-pointer hover:border-gray-400 hover:bg-white transition-all duration-150 select-none"
         >
-          <span className="text-sm font-medium text-gray-700">{node.label}</span>
+          <span className="text-sm font-medium text-gray-700">
+            {node.label}
+          </span>
           <span className="text-[11px] text-gray-400">{node.description}</span>
         </div>
       ))}

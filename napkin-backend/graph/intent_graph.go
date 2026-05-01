@@ -3,11 +3,16 @@ package graph
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 )
 
+const defaultRegion = "us-east-1"
+
 type IntentGraph struct {
-	Nodes map[NodeID]Node
-	Edges []Edge
+	Region string
+	Nodes  map[NodeID]Node
+	Edges  []Edge
 }
 
 func NewIntentGraph() *IntentGraph {
@@ -27,6 +32,8 @@ func (ig *IntentGraph) FromJSON(data []byte) error {
 		return err
 	}
 
+	ig.Region = payload.Region
+
 	for _, nodeSlice := range payload.Nodes {
 		for _, n := range nodeSlice {
 			ig.Nodes[n.ID] = n
@@ -35,6 +42,83 @@ func (ig *IntentGraph) FromJSON(data []byte) error {
 
 	ig.Edges = payload.Edges
 	return nil
+}
+
+// Normalize backfills derived fields on the IntentGraph so downstream
+// consumers (analyzers, compilers) can rely on a uniform shape:
+//
+//   - Region defaults to "us-east-1" when missing.
+//   - Each Node.Kind is resolved (explicit, or inferred from spec.type) and
+//     looked up against Registry. Unknown kinds return an error.
+//   - Missing Node.Attributes keys listed in KindDef.Defaults are filled.
+//   - Node.Ports is populated from KindDef when empty so analyzers can see
+//     the declared port surface, not just the edges that happen to use it.
+//   - spec.class and spec.type are filled from the registry when missing,
+//     keeping IntentGraphToIR happy without changing its contract.
+func (ig *IntentGraph) Normalize() error {
+	if strings.TrimSpace(ig.Region) == "" {
+		ig.Region = defaultRegion
+	}
+
+	for id, node := range ig.Nodes {
+		specMap, _ := node.Spec.(map[string]any)
+		if specMap == nil {
+			specMap = map[string]any{}
+		}
+
+		kind := node.Kind
+		if kind == "" {
+			if k, ok := inferKindFromSpec(specMap); ok {
+				kind = k
+			}
+		}
+		if kind == "" {
+			return fmt.Errorf("node %s: cannot determine kind (set node.kind or spec.type)", id)
+		}
+
+		def, ok := Registry[kind]
+		if !ok {
+			return fmt.Errorf("node %s: unknown kind %q", id, kind)
+		}
+
+		if _, exists := specMap["class"]; !exists {
+			specMap["class"] = "resource"
+		}
+		if _, exists := specMap["type"]; !exists {
+			specMap["type"] = def.TerraformType
+		}
+
+		if node.Attributes == nil {
+			node.Attributes = map[string]string{}
+		}
+		for k, v := range def.Defaults {
+			if _, set := node.Attributes[k]; !set {
+				node.Attributes[k] = v
+			}
+		}
+
+		if len(node.Ports.Inputs) == 0 && len(def.Inputs) > 0 {
+			node.Ports.Inputs = append([]PortDef(nil), def.Inputs...)
+		}
+		if len(node.Ports.Outputs) == 0 && len(def.Outputs) > 0 {
+			node.Ports.Outputs = append([]PortDef(nil), def.Outputs...)
+		}
+
+		node.Kind = kind
+		node.Spec = specMap
+		ig.Nodes[id] = node
+	}
+
+	return nil
+}
+
+func inferKindFromSpec(specMap map[string]any) (NodeKind, bool) {
+	tfType, _ := specMap["type"].(string)
+	tfType = strings.TrimSpace(tfType)
+	if tfType == "" {
+		return "", false
+	}
+	return KindForTerraformType(tfType)
 }
 
 func (ig *IntentGraph) ToDirectedGraph() (*DirectedGraph, error) {

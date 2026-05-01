@@ -48,6 +48,11 @@ func CompileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ig.Normalize(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	ir, err := IntentGraphToIR(ig)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

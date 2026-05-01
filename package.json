@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -n frontend,backend -c cyan,green \"pnpm dev:frontend\" \"pnpm dev:backend\"",
     "dev:frontend": "pnpm --filter napkin-app dev",
-    "dev:backend": "cd napkin-backend && go run main.go",
+    "dev:backend": "cd napkin-backend && \"$(go env GOPATH)/bin/air\"",
     "build": "pnpm build:frontend && pnpm build:backend",
     "build:frontend": "pnpm --filter napkin-app build",
     "build:backend": "cd napkin-backend && go build -o bin/server .",

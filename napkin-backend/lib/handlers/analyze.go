@@ -38,6 +38,11 @@ func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ig.Normalize(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	dg, err := ig.ToDirectedGraph()
 	if err != nil {
 		http.Error(w, "Invalid graph format", http.StatusBadRequest)

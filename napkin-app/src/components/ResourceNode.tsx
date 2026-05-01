@@ -12,27 +12,17 @@ import { Button } from "@/components/ui/button";
 import { Trash } from 'lucide-react';
 import { Position } from '@xyflow/react';
 
-type PortType = "network" | "data";
-
-type PortSpec = {
-  id: string;
-  type: PortType;
-  label: string;
-};
-
-type NodeSpec = {
-  label: string;
-  color?: string;
-  borderColor?: string;
-  iconColor?: string; 
-  inputs?: PortSpec[];
-  outputs?: PortSpec[];
-};
+import {
+  PORT_TYPE_HANDLE_CLASS,
+  type KindDef,
+  type PortDef,
+} from '@/lib/kinds';
 
 type Attributes = Record<string, string>;
 
 type ResourceNodeData = {
-  spec: NodeSpec;
+  kind?: string;
+  spec: KindDef;
   attributes: Attributes;
   error?: string | null;
 };
@@ -41,6 +31,10 @@ type ResourceNodeProps = {
   id: string;
   data: ResourceNodeData;
 };
+
+function handleClass(port: PortDef): string {
+  return PORT_TYPE_HANDLE_CLASS[port.type] ?? "!bg-gray-400 !border-gray-500";
+}
 
 export default function ResourceNode({ id, data }: ResourceNodeProps) {
   const { spec, attributes, error } = data;
@@ -139,7 +133,7 @@ export default function ResourceNode({ id, data }: ResourceNodeProps) {
             type="target"
             position={Position.Left}
             title={port.label}
-            handleClassName="!bg-yellow-400 !border-yellow-500"
+            handleClassName={handleClass(port)}
           />
         ))}
 
@@ -150,7 +144,7 @@ export default function ResourceNode({ id, data }: ResourceNodeProps) {
             type="source"
             position={Position.Right}
             title={port.label}
-            handleClassName="!bg-gray-400 !border-gray-500"
+            handleClassName={handleClass(port)}
           />
         ))}
 

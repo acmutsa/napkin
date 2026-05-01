@@ -29,6 +29,9 @@ func TestIntentGraphToIR_StripsNonWhitelistSpecAndSlugs(t *testing.T) {
 	if err := ig.FromJSON(raw); err != nil {
 		t.Fatal(err)
 	}
+	if err := ig.Normalize(); err != nil {
+		t.Fatal(err)
+	}
 
 	ir, err := IntentGraphToIR(ig)
 	if err != nil {
@@ -75,6 +78,9 @@ func TestIntentGraphToIR_DropsMetaKeysFromNodeAttributes(t *testing.T) {
 	if err := ig.FromJSON(raw); err != nil {
 		t.Fatal(err)
 	}
+	if err := ig.Normalize(); err != nil {
+		t.Fatal(err)
+	}
 	ir, err := IntentGraphToIR(ig)
 	if err != nil {
 		t.Fatal(err)
@@ -112,8 +118,8 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 		},
 		"edges": [
 			{
-				"source": { "node": "resource", "id": "dbid", "port": "db-out" },
-				"target": { "node": "resource", "id": "ec2id", "port": "db-in" },
+				"source": { "node": "resource", "id": "dbid", "port": "out-data" },
+				"target": { "node": "resource", "id": "ec2id", "port": "in-env" },
 				"type": "data-flow"
 			}
 		]
@@ -121,6 +127,9 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 
 	ig := graph.NewIntentGraph()
 	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := ig.Normalize(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,7 +143,7 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 	if ir.Edges[0].FromID != "dbid" || ir.Edges[0].ToID != "ec2id" {
 		t.Fatalf("edge endpoints: %+v", ir.Edges[0])
 	}
-	if ir.Edges[0].TargetPort != "db-in" {
+	if ir.Edges[0].TargetPort != "in-env" {
 		t.Fatalf("TargetPort=%q", ir.Edges[0].TargetPort)
 	}
 
@@ -153,6 +162,38 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 	}
 	if db.ExprAttributes["allocated_storage"] != "20" {
 		t.Fatalf("db defaults: %#v", db.ExprAttributes)
+	}
+	if db.ExprAttributes["password"] != "var.db_master_password" {
+		t.Fatalf("db password should use sensitive variable, got %#v", db.ExprAttributes)
+	}
+}
+
+func TestIntentGraphToIR_RegionFromJSON(t *testing.T) {
+	raw := []byte(`{
+		"region": "eu-west-1",
+		"nodes": {
+			"resource": [
+				{
+					"id": "n1",
+					"spec": { "label": "EC2 Instance", "class": "resource", "type": "aws_instance" }
+				}
+			]
+		},
+		"edges": []
+	}`)
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := ig.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ir.Region != "eu-west-1" {
+		t.Fatalf("Region=%q want eu-west-1", ir.Region)
 	}
 }
 
@@ -180,8 +221,8 @@ func TestCompileProducesDependsOn(t *testing.T) {
 		},
 		"edges": [
 			{
-				"source": { "node": "resource", "id": "dbid", "port": "db-out" },
-				"target": { "node": "resource", "id": "ec2id", "port": "db-in" },
+				"source": { "node": "resource", "id": "dbid", "port": "out-data" },
+				"target": { "node": "resource", "id": "ec2id", "port": "in-env" },
 				"type": "data-flow"
 			}
 		]
@@ -189,6 +230,9 @@ func TestCompileProducesDependsOn(t *testing.T) {
 
 	ig := graph.NewIntentGraph()
 	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := ig.Normalize(); err != nil {
 		t.Fatal(err)
 	}
 	ir, err := IntentGraphToIR(ig)
@@ -254,6 +298,9 @@ func TestCompileRDS_EC2_LinkWithoutHandlePorts(t *testing.T) {
 	if err := ig.FromJSON(raw); err != nil {
 		t.Fatal(err)
 	}
+	if err := ig.Normalize(); err != nil {
+		t.Fatal(err)
+	}
 	ir, err := IntentGraphToIR(ig)
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +341,7 @@ func TestCompileRDS_EC2_ReversedEdgeDirection(t *testing.T) {
 		},
 		"edges": [
 			{
-				"source": { "node": "resource", "id": "ec2id", "port": "data-out" },
+				"source": { "node": "resource", "id": "ec2id", "port": "out-data" },
 				"target": { "node": "resource", "id": "dbid" },
 				"type": "data-flow"
 			}
@@ -303,6 +350,9 @@ func TestCompileRDS_EC2_ReversedEdgeDirection(t *testing.T) {
 
 	ig := graph.NewIntentGraph()
 	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := ig.Normalize(); err != nil {
 		t.Fatal(err)
 	}
 	ir, err := IntentGraphToIR(ig)

@@ -1,4 +1,6 @@
 import type { Node, Edge } from "@xyflow/react";
+import { awsRegionDefault } from "@/lib/apiBase";
+import { getKind, type KindDef, type PortDef } from "@/lib/kinds";
 
 type TransformedEdge = {
   source: { node: string; id: string; port?: string };
@@ -6,30 +8,30 @@ type TransformedEdge = {
   type: string;
 };
 
+type TransformedPorts = {
+  inputs: PortDef[];
+  outputs: PortDef[];
+};
+
 type TransformResult = {
+  region: string;
   nodes: Record<string, unknown[]>;
   edges: TransformedEdge[];
 };
 
-/** Maps canvas labels to Terraform resource types for compile IR. */
-function terraformTypeFromSpecLabel(label: string): string {
-  const map: Record<string, string> = {
-    "EC2 Instance": "aws_instance",
-    Database: "aws_db_instance",
-    "Load Balancer": "aws_lb",
-    "Security Group": "aws_security_group",
-    "Storage Bucket": "aws_s3_bucket",
-  };
-  return map[label] ?? "aws_instance";
-}
+type CanvasNodeData = {
+  kind?: string;
+  spec?: Partial<KindDef> & { label?: string };
+  attributes?: Record<string, string>;
+};
 
 export function transformNodes(nodeMap: Node[], edges: Edge[]) {
   const result: TransformResult = {
+    region: awsRegionDefault(),
     nodes: {},
     edges: [],
   };
 
-  // process the nodes
   nodeMap.forEach((node) => {
     const type = node.type || "Unknown";
 
@@ -37,39 +39,39 @@ export function transformNodes(nodeMap: Node[], edges: Edge[]) {
       result.nodes[type] = [];
     }
 
-    const data = node.data as {
-      spec?: Record<string, unknown> & { label?: string };
-      attributes?: Record<string, string>;
-    } | null;
-    const rawSpec =
-      data?.spec && typeof data.spec === "object" ? data.spec : {};
-    const label =
-      typeof rawSpec.label === "string" ? rawSpec.label : "";
+    const data = (node.data ?? {}) as CanvasNodeData;
+    const def = getKind(data.kind);
 
-    // Compile/analyze payload only: omit canvas-only fields (colors, ports).
+    const label = data.spec?.label ?? def?.label ?? "";
+    const terraformType = def?.terraformType ?? data.spec?.terraformType;
+
+    const ports: TransformedPorts = {
+      inputs: data.spec?.inputs ?? def?.inputs ?? [],
+      outputs: data.spec?.outputs ?? def?.outputs ?? [],
+    };
+
     result.nodes[type].push({
       id: node.id,
+      ...(data.kind ? { kind: data.kind } : {}),
       spec: {
         label,
         class: type,
-        type: terraformTypeFromSpecLabel(label),
+        ...(terraformType ? { type: terraformType } : {}),
       },
-      ...(data?.attributes ? { attributes: data.attributes } : {}),
+      ports,
+      ...(data.attributes ? { attributes: data.attributes } : {}),
     });
   });
 
-  // Build lookup map for nodes for easier edge processing
   const nodeById = new Map<string, Node>();
   nodeMap.forEach((node) => {
     nodeById.set(node.id, node);
   });
 
-  // process the edges
   edges.forEach((edge) => {
     const sourceNode = nodeById.get(edge.source);
     const targetNode = nodeById.get(edge.target);
 
-    // error catching
     if (!sourceNode || !targetNode) {
       console.warn("Invalid edge (missing node)", edge);
       return;
@@ -91,7 +93,7 @@ export function transformNodes(nodeMap: Node[], edges: Edge[]) {
         id: targetNode.id,
         port: edge.targetHandle ?? undefined,
       },
-      type: "data-flow", // could be dynamic later, hard coding for right now
+      type: "data-flow",
     });
   });
 

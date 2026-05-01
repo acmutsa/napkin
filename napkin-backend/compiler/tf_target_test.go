@@ -7,6 +7,7 @@ import (
 
 func TestTerraformTargetCompile(t *testing.T) {
 	ir := IR{
+		Region: "us-east-1",
 		Nodes: []GraphNode{
 			{
 				ID:        "canvas-web-id",
@@ -14,7 +15,7 @@ func TestTerraformTargetCompile(t *testing.T) {
 				Class:     ClassResource,
 				Type:      "aws_instance",
 				Attributes: map[string]string{
-					"ami":           "ami-123",
+					"ami":           "ami-custom",
 					"instance_type": "t2.micro",
 				},
 			},
@@ -51,15 +52,27 @@ func TestTerraformTargetCompile(t *testing.T) {
 		t.Errorf("expected name web, got %s", resourceBlock.Labels[1])
 	}
 
-	if resourceBlock.Attributes["ami"] != "ami-123" {
-		t.Errorf("expected ami attribute to be ami-123")
+	if resourceBlock.Attributes["ami"] != "ami-custom" {
+		t.Errorf("expected ami attribute to be ami-custom")
 	}
 
 	out := tfFile.String()
 	if !strings.Contains(out, `provider "aws"`) {
 		t.Errorf("expected provider aws block")
 	}
-	if !strings.Contains(out, `region = "us-east-1"`) {
-		t.Errorf("expected default region")
+	if !strings.Contains(out, `region = var.aws_region`) {
+		t.Errorf("expected provider region from variable")
+	}
+	if !strings.Contains(out, `variable "aws_region"`) {
+		t.Errorf("expected aws_region variable")
+	}
+	if !strings.Contains(out, `default = "us-east-1"`) {
+		t.Errorf("expected default region in variable block")
+	}
+	if !strings.Contains(out, `resource "aws_vpc"`) {
+		t.Errorf("expected napkin VPC scaffold")
+	}
+	if !strings.Contains(out, `data "aws_ami"`) {
+		t.Errorf("expected AMI data source")
 	}
 }
