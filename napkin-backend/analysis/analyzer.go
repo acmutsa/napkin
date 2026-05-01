@@ -5,14 +5,14 @@ import (
 )
 
 type AnalysisError struct {
-	NodeID  graph.NodeID
-	Message string
+	NodeID  graph.NodeID `json:"nodeId"`
+	Message string       `json:"message"`
 }
 
 type Annotation struct {
-	NodeID graph.NodeID
-	Label  string
-	Value  string
+	NodeID graph.NodeID `json:"nodeId"`
+	Label  string       `json:"label"`
+	Value  string       `json:"value"`
 }
 
 type Analyzer interface {

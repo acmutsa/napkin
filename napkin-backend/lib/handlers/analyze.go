@@ -50,14 +50,20 @@ func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	performanceAnalyzer := analysis.PerformanceAnalyzer{}
 	performanceErrors, performanceAnnotations := performanceAnalyzer.Analyze(dg)
 
+	allErrors := make([]analysis.AnalysisError, 0, len(networkErrors)+len(performanceErrors))
+	allErrors = append(allErrors, networkErrors...)
+	allErrors = append(allErrors, performanceErrors...)
+
+	allAnnotations := make([]analysis.Annotation, 0, len(networkAnnotations)+len(performanceAnnotations))
+	allAnnotations = append(allAnnotations, networkAnnotations...)
+	allAnnotations = append(allAnnotations, performanceAnnotations...)
+
 	w.Header().Set("Content-Type", "application/json")
 
 	json.NewEncoder(w).Encode(map[string]any{
-		"success":                    true,
-		"networkSecurityErrors":      networkErrors,
-		"networkSecurityAnnotations": networkAnnotations,
-		"performanceErrors":          performanceErrors,
-		"performanceAnnotations":     performanceAnnotations,
+		"success":     true,
+		"errors":      allErrors,
+		"annotations": allAnnotations,
 	})
 }
 

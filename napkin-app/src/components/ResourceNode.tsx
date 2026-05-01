@@ -89,7 +89,7 @@ export default function ResourceNode({ id, data }: ResourceNodeProps) {
       nodes.map((node) => {
         if (node.id !== id) return node;
         const currentAttrs = node.data.attributes;
-        if (currentAttrs[newKey]) return node;
+        if (newKey in currentAttrs) return node;
         const value = currentAttrs[oldKey];
         const updatedAttrs: Attributes = { ...currentAttrs };
         delete updatedAttrs[oldKey];
