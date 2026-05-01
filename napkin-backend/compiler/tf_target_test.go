@@ -1,14 +1,18 @@
 package compiler
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTerraformTargetCompile(t *testing.T) {
 	ir := IR{
 		Nodes: []GraphNode{
 			{
-				ID:    "web",
-				Class: ClassResource,
-				Type:  "aws_instance",
+				ID:        "canvas-web-id",
+				LocalName: "web",
+				Class:     ClassResource,
+				Type:      "aws_instance",
 				Attributes: map[string]string{
 					"ami":           "ami-123",
 					"instance_type": "t2.micro",
@@ -24,29 +28,38 @@ func TestTerraformTargetCompile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(tfFile.Block) != 1 {
-		t.Fatalf("expected 1 block, got %d", len(tfFile.Block))
+	var resourceBlock *TFBlock
+	for i := range tfFile.Block {
+		if tfFile.Block[i].Class == "resource" && len(tfFile.Block[i].Labels) > 0 && tfFile.Block[i].Labels[0] == "aws_instance" {
+			resourceBlock = &tfFile.Block[i]
+			break
+		}
+	}
+	if resourceBlock == nil {
+		t.Fatalf("no aws_instance resource block in %#v", tfFile.Block)
 	}
 
-	block := tfFile.Block[0]
-
-	if block.Class != "resource" {
-		t.Errorf("expected class resource, got %s", block.Class)
+	if len(resourceBlock.Labels) != 2 {
+		t.Fatalf("expected 2 labels, got %d", len(resourceBlock.Labels))
 	}
 
-	if len(block.Labels) != 2 {
-		t.Fatalf("expected 2 labels, got %d", len(block.Labels))
+	if resourceBlock.Labels[0] != "aws_instance" {
+		t.Errorf("expected type aws_instance, got %s", resourceBlock.Labels[0])
 	}
 
-	if block.Labels[0] != "aws_instance" {
-		t.Errorf("expected type aws_instance, got %s", block.Labels[0])
+	if resourceBlock.Labels[1] != "web" {
+		t.Errorf("expected name web, got %s", resourceBlock.Labels[1])
 	}
 
-	if block.Labels[1] != "web" {
-		t.Errorf("expected name web, got %s", block.Labels[1])
-	}
-
-	if block.Attributes["ami"] != "ami-123" {
+	if resourceBlock.Attributes["ami"] != "ami-123" {
 		t.Errorf("expected ami attribute to be ami-123")
+	}
+
+	out := tfFile.String()
+	if !strings.Contains(out, `provider "aws"`) {
+		t.Errorf("expected provider aws block")
+	}
+	if !strings.Contains(out, `region = "us-east-1"`) {
+		t.Errorf("expected default region")
 	}
 }

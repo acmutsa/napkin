@@ -19,6 +19,10 @@ func writeBlock(builder *strings.Builder, block TFBlock, indent string) {
 		builder.WriteString(indent + "  " + k + " = " + strconv.Quote(v) + "\n")
 	}
 
+	for k, v := range block.ExprAttributes {
+		builder.WriteString(indent + "  " + k + " = " + v + "\n")
+	}
+
 	for _, child := range block.Blocks {
 		writeBlock(builder, child, indent+"  ")
 	}

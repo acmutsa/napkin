@@ -3,8 +3,9 @@ package graph
 type NodeID string
 
 type Node struct {
-	ID   NodeID `json:"id"`
-	Spec any    `json:"spec"`
+	ID         NodeID            `json:"id"`
+	Spec       any               `json:"spec"`
+	Attributes map[string]string `json:"attributes,omitempty"`
 }
 
 type Edge struct {

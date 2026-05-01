@@ -11,8 +11,6 @@ type TransformResult = {
   edges: TransformedEdge[];
 };
 
-type NodeSpecLike = Record<string, unknown> & { label?: string };
-
 /** Maps canvas labels to Terraform resource types for compile IR. */
 function terraformTypeFromSpecLabel(label: string): string {
   const map: Record<string, string> = {
@@ -40,18 +38,19 @@ export function transformNodes(nodeMap: Node[], edges: Edge[]) {
     }
 
     const data = node.data as {
-      spec?: NodeSpecLike;
+      spec?: Record<string, unknown> & { label?: string };
       attributes?: Record<string, string>;
     } | null;
-    const baseSpec =
-      data?.spec && typeof data.spec === "object" ? { ...data.spec } : {};
+    const rawSpec =
+      data?.spec && typeof data.spec === "object" ? data.spec : {};
+    const label =
+      typeof rawSpec.label === "string" ? rawSpec.label : "";
 
-    const label = typeof baseSpec.label === "string" ? baseSpec.label : "";
-
+    // Compile/analyze payload only: omit canvas-only fields (colors, ports).
     result.nodes[type].push({
       id: node.id,
       spec: {
-        ...baseSpec,
+        label,
         class: type,
         type: terraformTypeFromSpecLabel(label),
       },

@@ -91,9 +91,8 @@ func TestFromJSON(t *testing.T) {
 }
 
 func TestIntentGraphWithSpring26Schema(t *testing.T) {
-    // Ensure this JSON matches your GraphJSON struct exactly
+    // IntentGraph.FromJSON expects InnerGraph (nodes + edges at top level).
     rawJSON := `{
-        "graph": {
             "nodes": {
                 "resource": [
                     {
@@ -117,7 +116,6 @@ func TestIntentGraphWithSpring26Schema(t *testing.T) {
                     "target": { "id": "db-01" }
                 }
             ]
-        }
     }`
 
     ig := NewIntentGraph()

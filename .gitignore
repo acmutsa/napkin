@@ -38,5 +38,4 @@ napkin-backend/tmp/
 coverage/
 *.out
 
-napkin-backend
 output.tf

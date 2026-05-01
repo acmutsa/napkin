@@ -1,0 +1,322 @@
+package handlers
+
+import (
+	"napkin-backend/compiler"
+	"napkin-backend/graph"
+	"strings"
+	"testing"
+)
+
+func TestIntentGraphToIR_StripsNonWhitelistSpecAndSlugs(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "1777593978834",
+					"spec": {
+						"label": "EC2 Instance",
+						"class": "resource",
+						"type": "aws_instance"
+					},
+					"attributes": { "ami": "ami-custom" }
+				}
+			]
+		},
+		"edges": []
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ir.Nodes) != 1 {
+		t.Fatalf("nodes: got %d", len(ir.Nodes))
+	}
+	n := ir.Nodes[0]
+	if n.LocalName != "ec2_instance" {
+		t.Fatalf("LocalName=%q want ec2_instance", n.LocalName)
+	}
+	if n.Attributes["ami"] != "ami-custom" {
+		t.Fatalf("user ami override missing: %#v", n.Attributes)
+	}
+	if n.Attributes["label"] != "" {
+		t.Fatalf("label leaked into attributes")
+	}
+}
+
+func TestIntentGraphToIR_DropsMetaKeysFromNodeAttributes(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "n1",
+					"spec": {
+						"label": "EC2 Instance",
+						"class": "resource",
+						"type": "aws_instance"
+					},
+					"attributes": {
+						"label": "oops",
+						"type": "oops_type",
+						"ami": "ami-999"
+					}
+				}
+			]
+		},
+		"edges": []
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := ir.Nodes[0]
+	if n.Attributes["label"] != "" || n.Attributes["type"] != "" {
+		t.Fatalf("meta keys leaked: %#v", n.Attributes)
+	}
+	if n.Attributes["ami"] != "ami-999" {
+		t.Fatalf("want ami-999, got %#v", n.Attributes)
+	}
+}
+
+func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "ec2id",
+					"spec": {
+						"label": "EC2 Instance",
+						"class": "resource",
+						"type": "aws_instance"
+					}
+				},
+				{
+					"id": "dbid",
+					"spec": {
+						"label": "Database",
+						"class": "resource",
+						"type": "aws_db_instance"
+					}
+				}
+			]
+		},
+		"edges": [
+			{
+				"source": { "node": "resource", "id": "dbid", "port": "db-out" },
+				"target": { "node": "resource", "id": "ec2id", "port": "db-in" },
+				"type": "data-flow"
+			}
+		]
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ir.Edges) != 1 {
+		t.Fatalf("edges: got %d", len(ir.Edges))
+	}
+	if ir.Edges[0].FromID != "dbid" || ir.Edges[0].ToID != "ec2id" {
+		t.Fatalf("edge endpoints: %+v", ir.Edges[0])
+	}
+	if ir.Edges[0].TargetPort != "db-in" {
+		t.Fatalf("TargetPort=%q", ir.Edges[0].TargetPort)
+	}
+
+	var db *compiler.GraphNode
+	for i := range ir.Nodes {
+		if ir.Nodes[i].Type == "aws_db_instance" {
+			db = &ir.Nodes[i]
+			break
+		}
+	}
+	if db == nil {
+		t.Fatal("db node not found")
+	}
+	if db.LocalName != "database" {
+		t.Fatalf("db LocalName=%q", db.LocalName)
+	}
+	if db.ExprAttributes["allocated_storage"] != "20" {
+		t.Fatalf("db defaults: %#v", db.ExprAttributes)
+	}
+}
+
+func TestCompileProducesDependsOn(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "ec2id",
+					"spec": {
+						"label": "EC2 Instance",
+						"class": "resource",
+						"type": "aws_instance"
+					}
+				},
+				{
+					"id": "dbid",
+					"spec": {
+						"label": "Database",
+						"class": "resource",
+						"type": "aws_db_instance"
+					}
+				}
+			]
+		},
+		"edges": [
+			{
+				"source": { "node": "resource", "id": "dbid", "port": "db-out" },
+				"target": { "node": "resource", "id": "ec2id", "port": "db-in" },
+				"type": "data-flow"
+			}
+		]
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := &compiler.TerraformTarget{}
+	tfFile, err := target.Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := tfFile.String()
+	if !strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
+		t.Fatalf("missing depends_on:\n%s", out)
+	}
+	if !strings.Contains(out, `user_data = <<-EOT`) {
+		t.Fatalf("missing user_data heredoc:\n%s", out)
+	}
+	if !strings.Contains(out, `DATABASE_HOST=${aws_db_instance.database.address}`) {
+		t.Fatalf("missing DATABASE_HOST ref:\n%s", out)
+	}
+	if !strings.Contains(out, `DATABASE_PORT=${aws_db_instance.database.port}`) {
+		t.Fatalf("missing DATABASE_PORT ref:\n%s", out)
+	}
+	if !strings.Contains(out, `DATABASE_ENDPOINT=${aws_db_instance.database.endpoint}`) {
+		t.Fatalf("missing DATABASE_ENDPOINT ref:\n%s", out)
+	}
+}
+
+func TestCompileRDS_EC2_LinkWithoutHandlePorts(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "ec2id",
+					"spec": {
+						"label": "EC2 Instance",
+						"class": "resource",
+						"type": "aws_instance"
+					}
+				},
+				{
+					"id": "dbid",
+					"spec": {
+						"label": "Database",
+						"class": "resource",
+						"type": "aws_db_instance"
+					}
+				}
+			]
+		},
+		"edges": [
+			{
+				"source": { "node": "resource", "id": "dbid" },
+				"target": { "node": "resource", "id": "ec2id" },
+				"type": "data-flow"
+			}
+		]
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := &compiler.TerraformTarget{}
+	tfFile, err := target.Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := tfFile.String()
+	if !strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
+		t.Fatalf("missing depends_on without ports:\n%s", out)
+	}
+}
+
+func TestCompileRDS_EC2_ReversedEdgeDirection(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "ec2id",
+					"spec": {
+						"label": "EC2 Instance",
+						"class": "resource",
+						"type": "aws_instance"
+					}
+				},
+				{
+					"id": "dbid",
+					"spec": {
+						"label": "Database",
+						"class": "resource",
+						"type": "aws_db_instance"
+					}
+				}
+			]
+		},
+		"edges": [
+			{
+				"source": { "node": "resource", "id": "ec2id", "port": "data-out" },
+				"target": { "node": "resource", "id": "dbid" },
+				"type": "data-flow"
+			}
+		]
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := &compiler.TerraformTarget{}
+	tfFile, err := target.Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := tfFile.String()
+	if !strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
+		t.Fatalf("missing depends_on for ec2->db edge:\n%s", out)
+	}
+}

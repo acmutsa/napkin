@@ -24,26 +24,37 @@ type TFModule struct {
 	Name      string
 	Resources []TFResource
 }
+
 type TFBlock struct {
-	Class      string
-	Labels     []string
-	Attributes map[string]string
-	Blocks     []TFBlock
+	Class          string
+	Labels         []string
+	Attributes     map[string]string // string literals (quoted in HCL)
+	ExprAttributes map[string]string // raw RHS expressions (unquoted)
+	Blocks         []TFBlock
 }
+
 type TFFile struct {
 	Block []TFBlock
 }
 
+// DirectedEdge is a canvas edge (React Flow IDs). Ports match handle ids (e.g. db-in, db-out).
+type DirectedEdge struct {
+	FromID, ToID             string
+	SourcePort, TargetPort string
+}
+
 type GraphNode struct {
-	ID         string
-	Class      NodeClass
-	Type       string
-	Attributes map[string]string
-	Edges      []string // list of node IDs this node depends on
+	ID             string
+	LocalName      string // Terraform resource/data local name (slug)
+	Class          NodeClass
+	Type           string // Terraform type e.g. aws_instance
+	Attributes     map[string]string
+	ExprAttributes map[string]string // numeric/bool defaults, etc.
 }
 
 type IR struct {
 	Nodes []GraphNode
+	Edges []DirectedEdge
 }
 
 type Target interface {
