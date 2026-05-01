@@ -12,7 +12,7 @@ provider "aws" {
 }
 
 resource "aws_instance" "web" {
-  instance_type = "t2.micro"
   ami = "ami-123"
+  instance_type = "t2.micro"
 }
 

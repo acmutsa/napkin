@@ -43,7 +43,7 @@ func AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	networkAnalyzer := analysis.NetworkSecurityAnalyzer{}
-	networkErrors, networkAnnotations := networkAnalyzer.Analyze(dg)
+	networkErrors, networkAnnotations := networkAnalyzer.Analyze(ig)
 
 	performanceAnalyzer := analysis.PerformanceAnalyzer{}
 	performanceErrors, performanceAnnotations := performanceAnalyzer.Analyze(dg)
