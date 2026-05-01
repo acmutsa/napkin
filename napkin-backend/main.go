@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"napkin-backend/compiler"
 	"net/http"
 
 	"napkin-backend/lib/handlers"
@@ -12,42 +10,42 @@ import (
 )
 
 func main() {
-	ir := compiler.IR{
-		Nodes: []compiler.GraphNode{
-			{
-				ID:    "aws",
-				Class: compiler.ClassProvider,
-				Type:  "aws",
-				Attributes: map[string]string{
-					"region": "us-east-1",
-				},
-			},
-			{
-				ID:    "web",
-				Class: compiler.ClassResource,
-				Type:  "aws_instance",
-				Attributes: map[string]string{
-					"ami":           "ami-123",
-					"instance_type": "t2.micro",
-				},
-			},
-		},
-	}
+	// ir := compiler.IR{
+	// 	Nodes: []compiler.GraphNode{
+	// 		{
+	// 			ID:    "aws",
+	// 			Class: compiler.ClassProvider,
+	// 			Type:  "aws",
+	// 			Attributes: map[string]string{
+	// 				"region": "us-east-1",
+	// 			},
+	// 		},
+	// 		{
+	// 			ID:    "web",
+	// 			Class: compiler.ClassResource,
+	// 			Type:  "aws_instance",
+	// 			Attributes: map[string]string{
+	// 				"ami":           "ami-123",
+	// 				"instance_type": "t2.micro",
+	// 			},
+	// 		},
+	// 	},
+	// }
 
-	target := &compiler.TerraformTarget{}
+	// target := &compiler.TerraformTarget{}
 
-	tfFile, err := target.Compile(ir)
-	if err != nil {
-		panic(err)
-	}
-	terraformString := tfFile.String()
-	log.Println("Terraform file: ", terraformString)
-	err = compiler.WriteTerraformFile(tfFile, "output.tf")
-	if err != nil {
-		panic(err)
-	}
+	// tfFile, err := target.Compile(ir)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// terraformString := tfFile.String()
+	// log.Println("Terraform file: ", terraformString)
+	// err = compiler.WriteTerraformFile(tfFile, "output.tf")
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	fmt.Println("Terraform file written to output.tf")
+	// fmt.Println("Terraform file written to output.tf")
 
 	mux := http.NewServeMux()
 
