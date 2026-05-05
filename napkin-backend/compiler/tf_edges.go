@@ -89,10 +89,6 @@ type edgeBindings struct {
 	// vars should be injected into the EC2's user_data.
 	dbInjectIntoEC2 map[string][]string
 
-	// computeDependsOnDB[dbID] = aws_instance local names the DB depends on
-	// (reverse direction; corresponds to compute.outboundTraffic -> db.inboundTraffic).
-	dbDependsOnEC2Reverse map[string][]string
-
 	// roleOf[ec2ID] = aws_iam_role local name to wrap in an instance profile.
 	instanceProfileFor map[string]string
 	// lambdaRole[lambdaID] = aws_iam_role local name.
@@ -109,10 +105,9 @@ func newEdgeBindings() *edgeBindings {
 		subnetOf:              map[string][]string{},
 		sgOf:                  map[string][]string{},
 		lbTargets:             map[string][]GraphNode{},
-		dbDependsOnEC2:        map[string][]string{},
-		dbInjectIntoEC2:       map[string][]string{},
-		dbDependsOnEC2Reverse: map[string][]string{},
-		instanceProfileFor:    map[string]string{},
+		dbDependsOnEC2:     map[string][]string{},
+		dbInjectIntoEC2:    map[string][]string{},
+		instanceProfileFor: map[string]string{},
 		lambdaRole:            map[string]string{},
 		queueToLambda:         map[string][]string{},
 	}
@@ -149,7 +144,8 @@ func resolveEdges(edges []DirectedEdge, idToNode map[string]GraphNode) (*edgeBin
 		case effectLBToCompute:
 			b.lbTargets[from.ID] = append(b.lbTargets[from.ID], to)
 		case effectComputeToDB:
-			b.dbDependsOnEC2Reverse[to.ID] = appendUnique(b.dbDependsOnEC2Reverse[to.ID], from.LocalName)
+			// Network-path edge only; Terraform ordering is handled by implicit
+			// references when dataSource->connection is also present (EC2 user_data).
 		case effectDBToCompute:
 			// compute.dataSource -> database.connection
 			// Even though the edge direction is compute -> database (to match the canvas

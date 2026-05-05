@@ -23,9 +23,17 @@ import { apiBase } from "@/lib/apiBase";
 
 type IntentGraphPayload = ReturnType<typeof transformNodes>;
 
+/** Per-node, per-field source string from the compiler's inheritance pass. */
+export type InheritanceMap = Record<string, Record<string, string>>;
+
 interface FloatingMenuProps {
   onAnalyze: (analysisType: string) => Promise<AnalyzeError[]>;
   intentGraph: IntentGraphPayload;
+  /**
+   * Receives the inheritance map after a successful compile. The parent owns
+   * the state so node badges can be cleared when the user keeps editing.
+   */
+  onCompileResult?: (inherited: InheritanceMap) => void;
 }
 
 type CompileError = {
@@ -36,6 +44,7 @@ type CompileError = {
 export default function FloatingMenu({
   onAnalyze,
   intentGraph,
+  onCompileResult,
 }: FloatingMenuProps) {
   const [analysisType, setAnalysisType] = useState("Network");
   const [compileTarget, setCompileTarget] = useState("Terraform");
@@ -80,6 +89,7 @@ export default function FloatingMenu({
         success?: boolean;
         target?: string;
         output?: string;
+        inherited?: InheritanceMap;
       } = {};
       if (text) {
         try {
@@ -98,6 +108,7 @@ export default function FloatingMenu({
         );
         setErrorsVisible(true);
         setCompiledOutput(null);
+        onCompileResult?.({});
       } else if (
         data.success &&
         typeof data.output === "string" &&
@@ -108,6 +119,7 @@ export default function FloatingMenu({
           target: data.target ?? compileTarget,
         });
         setCopyState("idle");
+        onCompileResult?.(data.inherited ?? {});
       } else {
         setCompileErrors([
           {
@@ -124,6 +136,7 @@ export default function FloatingMenu({
       ]);
       setErrorsVisible(true);
       setCompiledOutput(null);
+      onCompileResult?.({});
     }
   }
 

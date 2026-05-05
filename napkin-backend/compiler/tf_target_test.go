@@ -302,6 +302,185 @@ func TestCompile_SGToEC2AppendsSecurityGroup(t *testing.T) {
 	}
 }
 
+func TestCompile_LBInheritsSubnetsFromTargets(t *testing.T) {
+	// LB has no explicit subnet edges. EC2 targets sit in two distinct canvas
+	// subnets in the same VPC, so the LB should inherit [sn_a, sn_b].
+	ir := IR{
+		Region: "us-east-1",
+		Nodes: []GraphNode{
+			{ID: "vpc1", LocalName: "vpc_a", Kind: "vpc", Class: ClassResource, Type: "aws_vpc"},
+			{ID: "sn1", LocalName: "sn_a", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+			{ID: "sn2", LocalName: "sn_b", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+			{ID: "ec1", LocalName: "web1", Kind: "compute", Class: ClassResource, Type: "aws_instance",
+				Attributes: map[string]string{"ami": "ami-custom"}},
+			{ID: "ec2", LocalName: "web2", Kind: "compute", Class: ClassResource, Type: "aws_instance",
+				Attributes: map[string]string{"ami": "ami-custom"}},
+			{ID: "lb", LocalName: "alb", Kind: "loadBalancer", Class: ClassResource, Type: "aws_lb"},
+		},
+		Edges: []DirectedEdge{
+			{FromID: "vpc1", ToID: "sn1", SourcePort: "network", TargetPort: "vpc"},
+			{FromID: "vpc1", ToID: "sn2", SourcePort: "network", TargetPort: "vpc"},
+			{FromID: "sn1", ToID: "ec1", SourcePort: "placement", TargetPort: "subnet"},
+			{FromID: "sn2", ToID: "ec2", SourcePort: "placement", TargetPort: "subnet"},
+			{FromID: "lb", ToID: "ec1", SourcePort: "forward", TargetPort: "inboundTraffic"},
+			{FromID: "lb", ToID: "ec2", SourcePort: "forward", TargetPort: "inboundTraffic"},
+		},
+	}
+	out, err := (&TerraformTarget{}).Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `subnets = [aws_subnet.sn_a.id, aws_subnet.sn_b.id]`) {
+		t.Fatalf("expected LB to inherit both target subnets:\n%s", s)
+	}
+	if out.Inheritance["lb"]["subnets"] == "" {
+		t.Fatalf("expected inheritance metadata for lb.subnets, got %#v", out.Inheritance)
+	}
+	if !strings.Contains(out.Inheritance["lb"]["subnets"], "web1") || !strings.Contains(out.Inheritance["lb"]["subnets"], "web2") {
+		t.Fatalf("inheritance source should reference both target compute LocalNames, got %q", out.Inheritance["lb"]["subnets"])
+	}
+}
+
+func TestCompile_LBInheritsSingleSubnetAndPadsWithSameVPCSibling(t *testing.T) {
+	// LB inherits one target subnet and should pad with another canvas subnet
+	// in the same VPC rather than reaching for a napkin default.
+	ir := IR{
+		Region: "us-east-1",
+		Nodes: []GraphNode{
+			{ID: "vpc1", LocalName: "vpc_a", Kind: "vpc", Class: ClassResource, Type: "aws_vpc"},
+			{ID: "sn1", LocalName: "sn_a", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+			{ID: "sn2", LocalName: "sn_b", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+			{ID: "ec1", LocalName: "web", Kind: "compute", Class: ClassResource, Type: "aws_instance",
+				Attributes: map[string]string{"ami": "ami-custom"}},
+			{ID: "lb", LocalName: "alb", Kind: "loadBalancer", Class: ClassResource, Type: "aws_lb"},
+		},
+		Edges: []DirectedEdge{
+			{FromID: "vpc1", ToID: "sn1", SourcePort: "network", TargetPort: "vpc"},
+			{FromID: "vpc1", ToID: "sn2", SourcePort: "network", TargetPort: "vpc"},
+			{FromID: "sn1", ToID: "ec1", SourcePort: "placement", TargetPort: "subnet"},
+			{FromID: "lb", ToID: "ec1", SourcePort: "forward", TargetPort: "inboundTraffic"},
+		},
+	}
+	out, err := (&TerraformTarget{}).Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `subnets = [aws_subnet.sn_a.id, aws_subnet.sn_b.id]`) {
+		t.Fatalf("expected LB to inherit sn_a and pad with same-VPC sn_b:\n%s", s)
+	}
+	if strings.Contains(s, "napkin_public_b") {
+		t.Fatalf("LB should not pad with napkin default when a same-VPC sibling exists:\n%s", s)
+	}
+}
+
+func TestCompile_LBExplicitSubnetEdgesDisableInheritance(t *testing.T) {
+	// User wired the LB to sn_a explicitly; even though the EC2 target is in
+	// sn_b, inheritance must not run.
+	ir := IR{
+		Region: "us-east-1",
+		Nodes: []GraphNode{
+			{ID: "vpc1", LocalName: "vpc_a", Kind: "vpc", Class: ClassResource, Type: "aws_vpc"},
+			{ID: "sn1", LocalName: "sn_a", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+			{ID: "sn2", LocalName: "sn_b", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+			{ID: "ec1", LocalName: "web", Kind: "compute", Class: ClassResource, Type: "aws_instance",
+				Attributes: map[string]string{"ami": "ami-custom"}},
+			{ID: "lb", LocalName: "alb", Kind: "loadBalancer", Class: ClassResource, Type: "aws_lb"},
+		},
+		Edges: []DirectedEdge{
+			{FromID: "vpc1", ToID: "sn1", SourcePort: "network", TargetPort: "vpc"},
+			{FromID: "vpc1", ToID: "sn2", SourcePort: "network", TargetPort: "vpc"},
+			{FromID: "sn1", ToID: "lb", SourcePort: "placement", TargetPort: "subnet"},
+			{FromID: "sn2", ToID: "ec1", SourcePort: "placement", TargetPort: "subnet"},
+			{FromID: "lb", ToID: "ec1", SourcePort: "forward", TargetPort: "inboundTraffic"},
+		},
+	}
+	out, err := (&TerraformTarget{}).Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `subnets = [aws_subnet.sn_a.id`) {
+		t.Fatalf("explicit LB subnet edge should win over inheritance:\n%s", s)
+	}
+	// The semantic guarantee is "no inheritance was performed"; verify via the
+	// metadata map rather than the rendered HCL (which may coincide with the
+	// padded inheritance output when subnetBExpr happens to alias the canvas).
+	if _, ok := out.Inheritance["lb"]; ok {
+		t.Fatalf("no inheritance should be recorded for lb when subnets were explicit, got %#v", out.Inheritance["lb"])
+	}
+}
+
+func TestCompile_LBWithNoTargetSubnetsFallsBackToNapkinDefaults(t *testing.T) {
+	// LB targets exist but the targets themselves have no explicit subnets, so
+	// inheritance should bail and the LB falls back to napkin defaults.
+	ir := IR{
+		Region: "us-east-1",
+		Nodes: []GraphNode{
+			{ID: "lb", LocalName: "alb", Kind: "loadBalancer", Class: ClassResource, Type: "aws_lb"},
+			{ID: "ec1", LocalName: "web", Kind: "compute", Class: ClassResource, Type: "aws_instance",
+				Attributes: map[string]string{"ami": "ami-custom"}},
+		},
+		Edges: []DirectedEdge{
+			{FromID: "lb", ToID: "ec1", SourcePort: "forward", TargetPort: "inboundTraffic"},
+		},
+	}
+	out, err := (&TerraformTarget{}).Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `aws_subnet.napkin_public_a.id`) {
+		t.Fatalf("LB without inheritable subnets should use napkin defaults:\n%s", s)
+	}
+	if _, ok := out.Inheritance["lb"]; ok {
+		t.Fatalf("no inheritance expected when targets had no subnets, got %#v", out.Inheritance)
+	}
+}
+
+func TestCompile_SingleCanvasVPCInfersSubnetVPCID(t *testing.T) {
+	// Subnet has no explicit vpc edge; with exactly one canvas VPC the
+	// inheritance pass should bind sn_a to vpc_a and record it.
+	ir := IR{
+		Region: "us-east-1",
+		Nodes: []GraphNode{
+			{ID: "vpc1", LocalName: "vpc_a", Kind: "vpc", Class: ClassResource, Type: "aws_vpc"},
+			{ID: "sn1", LocalName: "sn_a", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+		},
+	}
+	out, err := (&TerraformTarget{}).Compile(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `vpc_id = aws_vpc.vpc_a.id`) {
+		t.Fatalf("subnet should inherit vpc_id from the only canvas VPC:\n%s", s)
+	}
+	if got := out.Inheritance["sn1"]["vpc_id"]; got != "vpc_a" {
+		t.Fatalf("expected inheritance metadata sn1.vpc_id=vpc_a, got %q (full map: %#v)", got, out.Inheritance)
+	}
+}
+
+func TestCompile_MultipleCanvasVPCsErrorsOnUnwiredSubnet(t *testing.T) {
+	// Two canvas VPCs and a subnet without an explicit vpc edge: ambiguous.
+	ir := IR{
+		Region: "us-east-1",
+		Nodes: []GraphNode{
+			{ID: "vpc1", LocalName: "vpc_a", Kind: "vpc", Class: ClassResource, Type: "aws_vpc"},
+			{ID: "vpc2", LocalName: "vpc_b", Kind: "vpc", Class: ClassResource, Type: "aws_vpc"},
+			{ID: "sn1", LocalName: "sn_a", Kind: "subnet", Class: ClassResource, Type: "aws_subnet"},
+		},
+	}
+	_, err := (&TerraformTarget{}).Compile(ir)
+	if err == nil {
+		t.Fatal("expected compile error for ambiguous VPC inheritance with multiple canvas VPCs")
+	}
+	if !strings.Contains(err.Error(), "vpc_id") || !strings.Contains(err.Error(), "vpc_a") || !strings.Contains(err.Error(), "vpc_b") {
+		t.Fatalf("error should name the ambiguity and the candidate VPCs, got %v", err)
+	}
+}
+
 func TestCompile_EC2ToDBDataSourceEdgeInjectsDBEnv(t *testing.T) {
 	ir := IR{
 		Region: "us-east-1",
@@ -319,8 +498,8 @@ func TestCompile_EC2ToDBDataSourceEdgeInjectsDBEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	if !strings.Contains(s, `depends_on = [aws_db_instance.database]`) {
-		t.Fatalf("missing depends_on on EC2 for dataSource edge:\n%s", s)
+	if strings.Contains(s, `depends_on = [aws_db_instance.database]`) {
+		t.Fatalf("unexpected explicit depends_on; user_data refs imply EC2 -> RDS order:\n%s", s)
 	}
 	if !strings.Contains(s, `DATABASE_HOST=${aws_db_instance.database.address}`) {
 		t.Fatalf("missing DATABASE_HOST injection:\n%s", s)

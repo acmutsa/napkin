@@ -37,6 +37,13 @@ type TFBlock struct {
 
 type TFFile struct {
 	Block []TFBlock
+	// Inheritance records implicit attribute bindings the compiler inferred
+	// (e.g. an LB whose subnets were inherited from its EC2 targets, or a
+	// subnet whose vpc_id was inferred from the single canvas VPC). Keyed by
+	// node ID then by HCL field name, with a human-readable source string
+	// (typically a comma-separated list of source LocalNames). Not rendered
+	// in the HCL output; used by the API to surface "inherited from..." UI hints.
+	Inheritance map[string]map[string]string
 }
 
 // DirectedEdge is a canvas edge (React Flow IDs). Ports match handle ids

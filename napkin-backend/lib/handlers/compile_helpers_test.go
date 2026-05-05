@@ -249,8 +249,8 @@ func TestCompileProducesDependsOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := tfFile.String()
-	if !strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
-		t.Fatalf("missing depends_on:\n%s", out)
+	if strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
+		t.Fatalf("unexpected explicit depends_on when user_data references DB (redundant and can cycle):\n%s", out)
 	}
 	if !strings.Contains(out, `user_data = <<-EOT`) {
 		t.Fatalf("missing user_data heredoc:\n%s", out)
@@ -306,7 +306,7 @@ func TestCompile_RejectsEdgeWithoutPorts(t *testing.T) {
 	}
 }
 
-func TestCompileEC2ToDB_ReverseEdgeProducesDependsOnOnDB(t *testing.T) {
+func TestCompileEC2ToDB_ReverseNetworkEdgeDoesNotDependOnEC2(t *testing.T) {
 	raw := []byte(`{
 		"nodes": {
 			"resource": [
@@ -355,8 +355,8 @@ func TestCompileEC2ToDB_ReverseEdgeProducesDependsOnOnDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := tfFile.String()
-	if !strings.Contains(out, `depends_on = [aws_instance.ec2_instance]`) {
-		t.Fatalf("expected DB to depend_on EC2 for reverse traffic edge:\n%s", out)
+	if strings.Contains(out, `depends_on = [aws_instance.ec2_instance]`) {
+		t.Fatalf("unexpected RDS depends_on EC2 for network edge (cycles with data-source wiring):\n%s", out)
 	}
 }
 

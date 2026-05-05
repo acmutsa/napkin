@@ -70,10 +70,13 @@ func CompileHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	json.NewEncoder(w).Encode(map[string]any{
+	resp := map[string]any{
 		"success": true,
 		"target":  req.Target,
 		"output":  output,
-	})
-
+	}
+	if len(tfFile.Inheritance) > 0 {
+		resp["inherited"] = tfFile.Inheritance
+	}
+	json.NewEncoder(w).Encode(resp)
 }

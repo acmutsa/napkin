@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import Toolbox from "./ToolBox";
 import ResourceNode from "@/components/ResourceNode";
 import ResourceEdge from "@/components/ResourceEdge";
-import FloatingMenu from "@/components/FloatingMenu";
+import FloatingMenu, { type InheritanceMap } from "@/components/FloatingMenu";
 import {
   ReactFlow,
   Background,
@@ -53,14 +53,21 @@ function Flow() {
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [nodeErrors, setNodeErrors] = useState<Record<string, string>>({});
+  const [nodeInheritance, setNodeInheritance] = useState<InheritanceMap>({});
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const onNodesChange: OnNodesChange = useCallback(
-    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    (changes) => {
+      setNodes((nds) => applyNodeChanges(changes, nds));
+      setNodeInheritance({});
+    },
     [],
   );
   const onEdgesChange: OnEdgesChange = useCallback(
-    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    (changes) => {
+      setEdges((eds) => applyEdgeChanges(changes, eds));
+      setNodeInheritance({});
+    },
     [],
   );
   const onConnect: OnConnect = useCallback(
@@ -188,18 +195,23 @@ function Flow() {
     setNodes((nds) => [...nds, newNode]);
   }, []);
 
-  const nodesWithErrors = nodes.map((node) => ({
+  const nodesWithMeta = nodes.map((node) => ({
     ...node,
     data: {
       ...node.data,
       error: nodeErrors[node.id] ?? null,
+      inherited: nodeInheritance[node.id] ?? null,
     },
   }));
 
   return (
     <div className="w-screen h-screen relative">
       <Toolbox onAdd={onAdd} />
-      <FloatingMenu onAnalyze={handleAnalyze} intentGraph={intentGraph} />
+      <FloatingMenu
+        onAnalyze={handleAnalyze}
+        intentGraph={intentGraph}
+        onCompileResult={setNodeInheritance}
+      />
       {connectError && (
         <div
           role="alert"
@@ -219,7 +231,7 @@ function Flow() {
         </div>
       )}
       <ReactFlow
-        nodes={nodesWithErrors}
+        nodes={nodesWithMeta}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}

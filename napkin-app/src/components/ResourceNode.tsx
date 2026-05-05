@@ -8,6 +8,7 @@ import {
   BaseNodeContent,
 } from '@/components/base-node';
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 import { Trash } from 'lucide-react';
 import { Position } from '@xyflow/react';
@@ -25,6 +26,8 @@ type ResourceNodeData = {
   spec: KindDef;
   attributes: Attributes;
   error?: string | null;
+  /** Map of HCL field name to source string for compiler-inherited bindings. */
+  inherited?: Record<string, string> | null;
 };
 
 type ResourceNodeProps = {
@@ -37,8 +40,9 @@ function handleClass(port: PortDef): string {
 }
 
 export default function ResourceNode({ id, data }: ResourceNodeProps) {
-  const { spec, attributes, error } = data;
+  const { spec, attributes, error, inherited } = data;
   const { deleteElements, setNodes } = useReactFlow<Node<ResourceNodeData>>();
+  const inheritedEntries = inherited ? Object.entries(inherited) : [];
 
   const handleDelete = () => {
     deleteElements({ nodes: [{ id }] });
@@ -125,7 +129,22 @@ export default function ResourceNode({ id, data }: ResourceNodeProps) {
             {error}
           </div>          
         )}
-        
+
+        {inheritedEntries.length > 0 && (
+          <div className="mx-2 mb-2 flex flex-wrap gap-1">
+            {inheritedEntries.map(([field, source]) => (
+              <Badge
+                key={field}
+                variant="secondary"
+                className="text-[10px] font-normal"
+                title={`${field} inherited from ${source}`}
+              >
+                {field} from {source}
+              </Badge>
+            ))}
+          </div>
+        )}
+
         {spec.inputs?.map((port) => (
           <LabeledHandle
             key={port.id}

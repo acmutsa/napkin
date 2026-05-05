@@ -13,11 +13,15 @@ import (
 // With the V1 port model these defaults are only used as a *fallback* when a
 // canvas resource has no explicit subnet/SG edges. Explicit edges always win.
 type networkBindings struct {
-	useCanvasNet    bool
-	vpcIDExpr       string // Terraform expression, e.g. aws_vpc.foo.id
-	subnetAExpr     string // aws_subnet.xxx.id
-	subnetBExpr     string // second subnet for ALB (may equal subnetAExpr if only one)
-	primaryVPCLocal string // LocalName of first canvas VPC; empty when using napkin network
+	useCanvasNet bool
+	vpcIDExpr    string // Terraform expression, e.g. aws_vpc.foo.id
+	subnetAExpr  string // aws_subnet.xxx.id
+	subnetBExpr  string // second subnet for ALB (may equal subnetAExpr if only one)
+	// canvasVPCs is the sorted list of LocalNames for every aws_vpc node drawn
+	// on the canvas. Empty when the user drew no VPC. The inheritance pass
+	// uses len(canvasVPCs) to decide whether VPC binding for unwired
+	// subnets/SGs is unambiguous (1), missing (0), or an error (2+).
+	canvasVPCs []string
 }
 
 func resolveNetworkBindings(ir IR) networkBindings {
@@ -34,21 +38,27 @@ func resolveNetworkBindings(ir IR) networkBindings {
 		}
 	}
 
-	if len(vpcs) < 1 || len(subnets) < 1 {
-		return networkBindings{
-			useCanvasNet: false,
-			vpcIDExpr:    "aws_vpc." + napkinVPC + ".id",
-			subnetAExpr:  "aws_subnet." + napkinSubnetA + ".id",
-			subnetBExpr:  "aws_subnet." + napkinSubnetB + ".id",
-		}
-	}
-
 	slices.SortFunc(vpcs, func(a, b GraphNode) int {
 		return strings.Compare(a.LocalName, b.LocalName)
 	})
 	slices.SortFunc(subnets, func(a, b GraphNode) int {
 		return strings.Compare(a.LocalName, b.LocalName)
 	})
+
+	canvasVPCs := make([]string, 0, len(vpcs))
+	for _, v := range vpcs {
+		canvasVPCs = append(canvasVPCs, v.LocalName)
+	}
+
+	if len(vpcs) < 1 || len(subnets) < 1 {
+		return networkBindings{
+			useCanvasNet: false,
+			vpcIDExpr:    "aws_vpc." + napkinVPC + ".id",
+			subnetAExpr:  "aws_subnet." + napkinSubnetA + ".id",
+			subnetBExpr:  "aws_subnet." + napkinSubnetB + ".id",
+			canvasVPCs:   canvasVPCs,
+		}
+	}
 
 	subnetA := "aws_subnet." + subnets[0].LocalName + ".id"
 	subnetB := subnetA
@@ -57,11 +67,11 @@ func resolveNetworkBindings(ir IR) networkBindings {
 	}
 
 	return networkBindings{
-		useCanvasNet:    true,
-		vpcIDExpr:       "aws_vpc." + vpcs[0].LocalName + ".id",
-		subnetAExpr:     subnetA,
-		subnetBExpr:     subnetB,
-		primaryVPCLocal: vpcs[0].LocalName,
+		useCanvasNet: true,
+		vpcIDExpr:    "aws_vpc." + vpcs[0].LocalName + ".id",
+		subnetAExpr:  subnetA,
+		subnetBExpr:  subnetB,
+		canvasVPCs:   canvasVPCs,
 	}
 }
 
@@ -139,6 +149,14 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 	bindings, err := resolveEdges(ir.Edges, idToNode)
 	if err != nil {
 		return nil, err
+	}
+
+	inherited, err := applyInheritance(ir, bindings, nb)
+	if err != nil {
+		return nil, err
+	}
+	if len(inherited) > 0 {
+		tfFile.Inheritance = inherited
 	}
 
 	tfFile.Block = append(tfFile.Block, napkinBanner("# --- napkin: canvas resources ---"))
@@ -252,23 +270,22 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 func applyNodeBindings(_ *TFBlock, _ GraphNode, _ *edgeBindings, _ networkBindings) {
 }
 
-// applySubnetBindings sets vpc_id from a vpc->subnet edge if present, else
-// falls back to the canvas VPC (when the canvas drew a VPC) or napkin's VPC.
-func applySubnetBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb networkBindings) {
+// applySubnetBindings sets vpc_id from b.vpcOf, which is populated either by
+// an explicit vpc->subnet edge or by the inheritance pass (single canvas VPC).
+// When neither path bound a VPC the subnet has no vpc_id (unreachable for any
+// canvas-drawn graph: applyInheritance errors out on multiple-VPC ambiguity,
+// and a canvas with zero VPCs can't have any aws_subnet nodes either).
+func applySubnetBindings(block *TFBlock, node GraphNode, b *edgeBindings, _ networkBindings) {
 	if hasVPCID(*block) {
 		return
 	}
 	if vpcLocal, ok := b.vpcOf[node.ID]; ok && vpcLocal != "" {
 		block.ExprAttributes["vpc_id"] = "aws_vpc." + vpcLocal + ".id"
-		return
-	}
-	if nb.useCanvasNet && nb.primaryVPCLocal != "" {
-		block.ExprAttributes["vpc_id"] = "aws_vpc." + nb.primaryVPCLocal + ".id"
 	}
 }
 
-// applySecurityGroupBindings sets vpc_id from a vpc->sg edge if present, else
-// falls back to napkin's VPC when no canvas VPC was drawn.
+// applySecurityGroupBindings sets vpc_id from b.vpcOf (explicit edge or
+// inheritance), falling back to napkin's VPC when the canvas drew no VPC.
 func applySecurityGroupBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb networkBindings) {
 	if hasVPCID(*block) {
 		return
@@ -277,11 +294,7 @@ func applySecurityGroupBindings(block *TFBlock, node GraphNode, b *edgeBindings,
 		block.ExprAttributes["vpc_id"] = "aws_vpc." + vpcLocal + ".id"
 		return
 	}
-	if nb.useCanvasNet && nb.primaryVPCLocal != "" {
-		block.ExprAttributes["vpc_id"] = "aws_vpc." + nb.primaryVPCLocal + ".id"
-	} else {
-		block.ExprAttributes["vpc_id"] = nb.vpcIDExpr
-	}
+	block.ExprAttributes["vpc_id"] = nb.vpcIDExpr
 }
 
 // applyComputeBindings wires subnet/security groups/data sources/IAM on EC2.
@@ -308,15 +321,20 @@ func applyComputeBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb ne
 		block.ExprAttributes["ami"] = "data.aws_ami." + napkinAMIData + ".id"
 	}
 
-	dbDeps := append([]string(nil), b.dbDependsOnEC2[node.ID]...)
-	if !hasUserData(*block) {
+	dbDeps := b.dbDependsOnEC2[node.ID]
+	preexistingUserData := hasUserData(*block)
+	if !preexistingUserData {
 		block.ExprAttributes["user_data"] = napkinEC2UserData(b.dbInjectIntoEC2[node.ID])
 	}
 	if profile := b.instanceProfileFor[node.ID]; profile != "" {
 		block.ExprAttributes["iam_instance_profile"] = "aws_iam_instance_profile." + profile + "_profile.name"
 	}
 
-	if len(dbDeps) > 0 {
+	// Napkin-injected user_data interpolates aws_db_instance.*; that already
+	// implies EC2 -> RDS ordering. An explicit depends_on in that case is
+	// redundant and creates cycles if another path adds RDS -> EC2 (e.g.
+	// compute.outboundTraffic -> database.inboundTraffic).
+	if len(dbDeps) > 0 && preexistingUserData {
 		refs := make([]string, 0, len(dbDeps))
 		for _, slug := range dbDeps {
 			refs = append(refs, "aws_db_instance."+slug)
@@ -325,17 +343,13 @@ func applyComputeBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb ne
 	}
 }
 
-// applyDatabaseBindings wires subnet groups + reverse depends_on for compute->db edges.
+// applyDatabaseBindings wires subnet groups. We intentionally do not add
+// depends_on from RDS to EC2 for compute.outboundTraffic -> db.inboundTraffic:
+// combined with EC2 user_data interpolating aws_db_instance.* that would form
+// a Terraform cycle.
 func applyDatabaseBindings(block *TFBlock, node GraphNode, b *edgeBindings) {
 	if subnets := b.subnetOf[node.ID]; len(subnets) > 0 {
 		block.ExprAttributes["db_subnet_group_name"] = "aws_db_subnet_group." + node.LocalName + "_sg.name"
-	}
-	if reverse := b.dbDependsOnEC2Reverse[node.ID]; len(reverse) > 0 {
-		refs := make([]string, 0, len(reverse))
-		for _, slug := range reverse {
-			refs = append(refs, "aws_instance."+slug)
-		}
-		block.ExprAttributes["depends_on"] = joinExprList(refs)
 	}
 }
 
