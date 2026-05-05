@@ -19,7 +19,8 @@ const (
 )
 
 // PortType classifies what flows across an edge connecting two ports.
-// Analyzers use this to reason about traffic vs. data vs. configuration vs. identity.
+// Analyzers and the compiler use this to enforce that only same-type ports may
+// be wired together.
 type PortType string
 
 const (
@@ -30,6 +31,10 @@ const (
 )
 
 // PortDef is one declared port (input or output) on a node kind.
+//
+// Port IDs are semantic (e.g. "subnet", "instanceRole", "connection") rather
+// than direction-prefixed. Each ID is unique within a kind+direction so React
+// Flow handle ids round-trip cleanly into edge.source.port / edge.target.port.
 type PortDef struct {
 	ID    string   `json:"id"`
 	Type  PortType `json:"type"`
@@ -55,19 +60,63 @@ type KindDef struct {
 // Registry is the single source of truth for node kinds on the backend.
 // Keep in sync with napkin-app/src/lib/kinds.ts.
 var Registry = map[NodeKind]KindDef{
+	KindVPC: {
+		TerraformType: "aws_vpc",
+		Defaults: map[string]string{
+			"cidr_block": "10.0.0.0/16",
+		},
+		Outputs: []PortDef{
+			{ID: "network", Type: PortNetwork, Label: "Network"},
+		},
+	},
+	KindSubnet: {
+		TerraformType: "aws_subnet",
+		Defaults: map[string]string{
+			"cidr_block": "10.0.1.0/24",
+		},
+		Inputs: []PortDef{
+			{ID: "vpc", Type: PortNetwork, Label: "Parent VPC"},
+		},
+		Outputs: []PortDef{
+			{ID: "placement", Type: PortNetwork, Label: "Placement"},
+		},
+	},
+	KindSecurityGroup: {
+		TerraformType: "aws_security_group",
+		Defaults: map[string]string{
+			"cidr_blocks": `["0.0.0.0/0"]`,
+		},
+		Inputs: []PortDef{
+			{ID: "vpc", Type: PortNetwork, Label: "VPC"},
+		},
+		Outputs: []PortDef{
+			{ID: "attachment", Type: PortNetwork, Label: "Attach to"},
+		},
+	},
+	KindIAMRole: {
+		TerraformType: "aws_iam_role",
+		// Minimal trust policy so generated HCL passes validation; override via canvas attributes if needed.
+		ExprDefaults: map[string]string{
+			"assume_role_policy": `jsonencode({Version = "2012-10-17", Statement = [{Effect = "Allow", Principal = {Service = "ec2.amazonaws.com"}, Action = "sts:AssumeRole"}]})`,
+		},
+		Outputs: []PortDef{
+			{ID: "role", Type: PortIAM, Label: "Role"},
+		},
+	},
 	KindCompute: {
 		TerraformType: "aws_instance",
 		Defaults: map[string]string{
 			"instance_type": "t2.micro",
 		},
 		Inputs: []PortDef{
-			{ID: "in-network", Type: PortNetwork, Label: "Incoming Traffic"},
-			{ID: "in-env", Type: PortEnv, Label: "Environment"},
-			{ID: "in-iam", Type: PortIAM, Label: "IAM Role"},
+			{ID: "subnet", Type: PortNetwork, Label: "Subnet"},
+			{ID: "securityGroup", Type: PortNetwork, Label: "Security Group"},
+			{ID: "inboundTraffic", Type: PortNetwork, Label: "Inbound Traffic"},
+			{ID: "instanceRole", Type: PortIAM, Label: "Instance Role"},
 		},
 		Outputs: []PortDef{
-			{ID: "out-network", Type: PortNetwork, Label: "Outbound Traffic"},
-			{ID: "out-data", Type: PortData, Label: "Data Out"},
+			{ID: "outboundTraffic", Type: PortNetwork, Label: "Outbound Traffic"},
+			{ID: "dataSource", Type: PortData, Label: "Data Source"},
 		},
 	},
 	KindDatabase: {
@@ -83,12 +132,11 @@ var Registry = map[NodeKind]KindDef{
 			"skip_final_snapshot": "true",
 		},
 		Inputs: []PortDef{
-			{ID: "in-network", Type: PortNetwork, Label: "Network"},
-			{ID: "in-env", Type: PortEnv, Label: "Configuration"},
+			{ID: "subnet", Type: PortNetwork, Label: "Subnet"},
+			{ID: "inboundTraffic", Type: PortNetwork, Label: "Inbound Traffic"},
+			{ID: "connection", Type: PortData, Label: "DB Connection"},
 		},
-		Outputs: []PortDef{
-			{ID: "out-data", Type: PortData, Label: "Connection"},
-		},
+		Outputs: []PortDef{},
 	},
 	KindLoadBalancer: {
 		TerraformType: "aws_lb",
@@ -96,59 +144,12 @@ var Registry = map[NodeKind]KindDef{
 			"load_balancer_type": "application",
 		},
 		Inputs: []PortDef{
-			{ID: "in-network", Type: PortNetwork, Label: "Incoming Traffic"},
+			{ID: "subnet", Type: PortNetwork, Label: "Subnet"},
+			{ID: "securityGroup", Type: PortNetwork, Label: "Security Group"},
+			{ID: "inboundTraffic", Type: PortNetwork, Label: "Public Traffic"},
 		},
 		Outputs: []PortDef{
-			{ID: "out-network", Type: PortNetwork, Label: "Forward Traffic"},
-		},
-	},
-	KindSecurityGroup: {
-		TerraformType: "aws_security_group",
-		Defaults: map[string]string{
-			"cidr_blocks": `["0.0.0.0/0"]`,
-		},
-		Inputs: []PortDef{
-			{ID: "in-network", Type: PortNetwork, Label: "Inbound"},
-		},
-		Outputs: []PortDef{
-			{ID: "out-network", Type: PortNetwork, Label: "Outbound"},
-		},
-	},
-	KindStorageBucket: {
-		TerraformType: "aws_s3_bucket",
-		Inputs: []PortDef{
-			{ID: "in-data", Type: PortData, Label: "Objects In"},
-			{ID: "in-iam", Type: PortIAM, Label: "Access Policy"},
-		},
-		Outputs: []PortDef{
-			{ID: "out-data", Type: PortData, Label: "Objects Out"},
-		},
-	},
-	KindVPC: {
-		TerraformType: "aws_vpc",
-		Defaults: map[string]string{
-			"cidr_block": "10.0.0.0/16",
-		},
-		Outputs: []PortDef{
-			{ID: "out-network", Type: PortNetwork, Label: "Network"},
-		},
-	},
-	KindSubnet: {
-		TerraformType: "aws_subnet",
-		Defaults: map[string]string{
-			"cidr_block": "10.0.1.0/24",
-		},
-		Inputs: []PortDef{
-			{ID: "in-network", Type: PortNetwork, Label: "Parent VPC"},
-		},
-		Outputs: []PortDef{
-			{ID: "out-network", Type: PortNetwork, Label: "Network"},
-		},
-	},
-	KindIAMRole: {
-		TerraformType: "aws_iam_role",
-		Outputs: []PortDef{
-			{ID: "out-iam", Type: PortIAM, Label: "Role"},
+			{ID: "forward", Type: PortNetwork, Label: "Forward to Targets"},
 		},
 	},
 	KindLambda: {
@@ -158,23 +159,30 @@ var Registry = map[NodeKind]KindDef{
 			"memory_size": "128",
 		},
 		Inputs: []PortDef{
-			{ID: "in-iam", Type: PortIAM, Label: "Execution Role"},
-			{ID: "in-env", Type: PortEnv, Label: "Environment"},
-			{ID: "in-data", Type: PortData, Label: "Event Source"},
+			{ID: "executionRole", Type: PortIAM, Label: "Execution Role"},
+			{ID: "eventSource", Type: PortData, Label: "Event Source"},
 		},
 		Outputs: []PortDef{
-			{ID: "out-network", Type: PortNetwork, Label: "Outbound Calls"},
-			{ID: "out-data", Type: PortData, Label: "Data Out"},
+			{ID: "output", Type: PortData, Label: "Output"},
 		},
 	},
 	KindSQSQueue: {
 		TerraformType: "aws_sqs_queue",
 		Inputs: []PortDef{
-			{ID: "in-data", Type: PortData, Label: "Producer"},
-			{ID: "in-iam", Type: PortIAM, Label: "Access Policy"},
+			{ID: "producer", Type: PortData, Label: "Producer"},
 		},
 		Outputs: []PortDef{
-			{ID: "out-data", Type: PortData, Label: "Consumer"},
+			{ID: "consumer", Type: PortData, Label: "Consumer"},
+		},
+	},
+	KindStorageBucket: {
+		TerraformType: "aws_s3_bucket",
+		Inputs: []PortDef{
+			{ID: "producer", Type: PortData, Label: "Objects In"},
+			{ID: "accessPolicy", Type: PortIAM, Label: "Access Policy"},
+		},
+		Outputs: []PortDef{
+			{ID: "consumer", Type: PortData, Label: "Objects Out"},
 		},
 	},
 }
@@ -188,4 +196,32 @@ func KindForTerraformType(tfType string) (NodeKind, bool) {
 		}
 	}
 	return "", false
+}
+
+// FindOutputPort returns the declared output port for a kind, or false.
+func FindOutputPort(kind NodeKind, portID string) (PortDef, bool) {
+	def, ok := Registry[kind]
+	if !ok {
+		return PortDef{}, false
+	}
+	for _, p := range def.Outputs {
+		if p.ID == portID {
+			return p, true
+		}
+	}
+	return PortDef{}, false
+}
+
+// FindInputPort returns the declared input port for a kind, or false.
+func FindInputPort(kind NodeKind, portID string) (PortDef, bool) {
+	def, ok := Registry[kind]
+	if !ok {
+		return PortDef{}, false
+	}
+	for _, p := range def.Inputs {
+		if p.ID == portID {
+			return p, true
+		}
+	}
+	return PortDef{}, false
 }

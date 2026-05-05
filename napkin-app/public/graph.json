@@ -1,19 +1,19 @@
 {
   "title": "Napkin IntentGraph schema",
-  "description": "Reference shape of an IntentGraph as sent by the canvas to /api/compile and /api/analyze. The backend Normalize() step backfills any omitted defaults and ports from the kind registry (napkin-backend/graph/kinds.go).",
-  "version": "2",
+  "description": "Reference shape of an IntentGraph as sent by the canvas to /api/compile and /api/analyze. The backend Normalize() step backfills any omitted defaults and ports from the kind registry (napkin-backend/graph/kinds.go). Edges MUST specify both source and target ports; both ports must reference declared ports on their kinds and have matching PortType.",
+  "version": "3",
   "portTypes": ["network", "data", "env", "iam"],
   "kinds": [
+    "vpc",
+    "subnet",
+    "securityGroup",
+    "iamRole",
     "compute",
     "database",
     "loadBalancer",
-    "securityGroup",
-    "storageBucket",
-    "vpc",
-    "subnet",
-    "iamRole",
     "lambda",
-    "sqsQueue"
+    "sqsQueue",
+    "storageBucket"
   ],
   "example": {
     "region": "us-east-1",
@@ -29,13 +29,14 @@
           },
           "ports": {
             "inputs": [
-              { "id": "in-network", "type": "network", "label": "Incoming Traffic" },
-              { "id": "in-env", "type": "env", "label": "Environment" },
-              { "id": "in-iam", "type": "iam", "label": "IAM Role" }
+              { "id": "subnet", "type": "network", "label": "Subnet" },
+              { "id": "securityGroup", "type": "network", "label": "Security Group" },
+              { "id": "inboundTraffic", "type": "network", "label": "Inbound Traffic" },
+              { "id": "instanceRole", "type": "iam", "label": "Instance Role" },
+              { "id": "dataSource", "type": "data", "label": "Data Source" }
             ],
             "outputs": [
-              { "id": "out-network", "type": "network", "label": "Outbound Traffic" },
-              { "id": "out-data", "type": "data", "label": "Data Out" }
+              { "id": "outboundTraffic", "type": "network", "label": "Outbound Traffic" }
             ]
           },
           "attributes": {
@@ -52,11 +53,11 @@
           },
           "ports": {
             "inputs": [
-              { "id": "in-network", "type": "network", "label": "Network" },
-              { "id": "in-env", "type": "env", "label": "Configuration" }
+              { "id": "subnet", "type": "network", "label": "Subnet" },
+              { "id": "inboundTraffic", "type": "network", "label": "Inbound Traffic" }
             ],
             "outputs": [
-              { "id": "out-data", "type": "data", "label": "Connection" }
+              { "id": "connection", "type": "data", "label": "DB Connection" }
             ]
           },
           "attributes": {
@@ -69,8 +70,8 @@
     },
     "edges": [
       {
-        "source": { "node": "resource", "id": "ec2-01", "port": "out-data" },
-        "target": { "node": "resource", "id": "db-01", "port": "in-network" },
+        "source": { "node": "resource", "id": "ec2-01", "port": "dataSource" },
+        "target": { "node": "resource", "id": "db-01", "port": "connection" },
         "type": "data-flow"
       }
     ]

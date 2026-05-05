@@ -44,8 +44,9 @@ func (ig *IntentGraph) FromJSON(data []byte) error {
 	return nil
 }
 
-// Normalize backfills derived fields on the IntentGraph so downstream
-// consumers (analyzers, compilers) can rely on a uniform shape:
+// Normalize backfills derived fields on the IntentGraph and then validates the
+// edge set so downstream consumers (analyzers, compilers) can rely on a uniform
+// shape:
 //
 //   - Region defaults to "us-east-1" when missing.
 //   - Each Node.Kind is resolved (explicit, or inferred from spec.type) and
@@ -55,6 +56,10 @@ func (ig *IntentGraph) FromJSON(data []byte) error {
 //     the declared port surface, not just the edges that happen to use it.
 //   - spec.class and spec.type are filled from the registry when missing,
 //     keeping IntentGraphToIR happy without changing its contract.
+//   - Every edge is validated: both source and target ports must be specified,
+//     reference declared ports on their respective kinds, and have matching
+//     PortType. This is a hard prerequisite for the compile target's
+//     port-driven dispatch.
 func (ig *IntentGraph) Normalize() error {
 	if strings.TrimSpace(ig.Region) == "" {
 		ig.Region = defaultRegion
@@ -109,6 +114,56 @@ func (ig *IntentGraph) Normalize() error {
 		ig.Nodes[id] = node
 	}
 
+	return ig.validateEdges()
+}
+
+// validateEdges enforces the V1 port contract:
+//   - Edges must reference existing source/target nodes.
+//   - Both Source.Port and Target.Port must be populated.
+//   - The named ports must exist on the source kind's outputs and the target
+//     kind's inputs respectively.
+//   - The two PortTypes must match.
+//
+// The contract is intentionally strict: callers (canvas / API) are expected to
+// supply explicit, type-compatible ports so the compiler can deterministically
+// wire each edge into Terraform.
+func (ig *IntentGraph) validateEdges() error {
+	for i, e := range ig.Edges {
+		src, ok := ig.Nodes[e.Source.ID]
+		if !ok {
+			return fmt.Errorf("edge %d: source node %q not found", i, e.Source.ID)
+		}
+		dst, ok := ig.Nodes[e.Target.ID]
+		if !ok {
+			return fmt.Errorf("edge %d: target node %q not found", i, e.Target.ID)
+		}
+
+		if strings.TrimSpace(e.Source.Port) == "" {
+			return fmt.Errorf("edge %s -> %s: source port is required", e.Source.ID, e.Target.ID)
+		}
+		if strings.TrimSpace(e.Target.Port) == "" {
+			return fmt.Errorf("edge %s -> %s: target port is required", e.Source.ID, e.Target.ID)
+		}
+
+		srcPort, ok := FindOutputPort(src.Kind, e.Source.Port)
+		if !ok {
+			return fmt.Errorf("edge %s -> %s: %s has no output port %q",
+				e.Source.ID, e.Target.ID, src.Kind, e.Source.Port)
+		}
+		dstPort, ok := FindInputPort(dst.Kind, e.Target.Port)
+		if !ok {
+			return fmt.Errorf("edge %s -> %s: %s has no input port %q",
+				e.Source.ID, e.Target.ID, dst.Kind, e.Target.Port)
+		}
+		if srcPort.Type != dstPort.Type {
+			return fmt.Errorf(
+				"edge %s -> %s: incompatible port types %s.%s (%s) -> %s.%s (%s)",
+				e.Source.ID, e.Target.ID,
+				src.Kind, srcPort.ID, srcPort.Type,
+				dst.Kind, dstPort.ID, dstPort.Type,
+			)
+		}
+	}
 	return nil
 }
 

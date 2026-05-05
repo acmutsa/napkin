@@ -104,14 +104,80 @@ func TestNormalize_PopulatesPortsFromRegistry(t *testing.T) {
 		t.Fatalf("expected ports populated, got %#v", got)
 	}
 
-	hasInNetwork := false
+	hasSubnet := false
 	for _, p := range got.Inputs {
-		if p.ID == "in-network" && p.Type == PortNetwork {
-			hasInNetwork = true
+		if p.ID == "subnet" && p.Type == PortNetwork {
+			hasSubnet = true
 		}
 	}
-	if !hasInNetwork {
-		t.Fatalf("compute should declare in-network input, got %#v", got.Inputs)
+	if !hasSubnet {
+		t.Fatalf("compute should declare subnet input, got %#v", got.Inputs)
+	}
+}
+
+func TestValidateEdges_OK(t *testing.T) {
+	ig := NewIntentGraph()
+	ig.Nodes["vpc"] = Node{ID: "vpc", Kind: KindVPC, Spec: map[string]any{}}
+	ig.Nodes["sn"] = Node{ID: "sn", Kind: KindSubnet, Spec: map[string]any{}}
+	e := Edge{Type: "data-flow"}
+	e.Source.ID, e.Source.Port = "vpc", "network"
+	e.Target.ID, e.Target.Port = "sn", "vpc"
+	ig.Edges = []Edge{e}
+	if err := ig.Normalize(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestValidateEdges_MissingSourcePort(t *testing.T) {
+	ig := NewIntentGraph()
+	ig.Nodes["vpc"] = Node{ID: "vpc", Kind: KindVPC, Spec: map[string]any{}}
+	ig.Nodes["sn"] = Node{ID: "sn", Kind: KindSubnet, Spec: map[string]any{}}
+	e := Edge{}
+	e.Source.ID = "vpc"
+	e.Target.ID, e.Target.Port = "sn", "vpc"
+	ig.Edges = []Edge{e}
+	err := ig.Normalize()
+	if err == nil {
+		t.Fatal("expected error for missing source port")
+	}
+}
+
+func TestValidateEdges_MissingTargetPort(t *testing.T) {
+	ig := NewIntentGraph()
+	ig.Nodes["vpc"] = Node{ID: "vpc", Kind: KindVPC, Spec: map[string]any{}}
+	ig.Nodes["sn"] = Node{ID: "sn", Kind: KindSubnet, Spec: map[string]any{}}
+	e := Edge{}
+	e.Source.ID, e.Source.Port = "vpc", "network"
+	e.Target.ID = "sn"
+	ig.Edges = []Edge{e}
+	if err := ig.Normalize(); err == nil {
+		t.Fatal("expected error for missing target port")
+	}
+}
+
+func TestValidateEdges_UnknownPortName(t *testing.T) {
+	ig := NewIntentGraph()
+	ig.Nodes["vpc"] = Node{ID: "vpc", Kind: KindVPC, Spec: map[string]any{}}
+	ig.Nodes["sn"] = Node{ID: "sn", Kind: KindSubnet, Spec: map[string]any{}}
+	e := Edge{}
+	e.Source.ID, e.Source.Port = "vpc", "network"
+	e.Target.ID, e.Target.Port = "sn", "not-a-real-port"
+	ig.Edges = []Edge{e}
+	if err := ig.Normalize(); err == nil {
+		t.Fatal("expected error for unknown target port")
+	}
+}
+
+func TestValidateEdges_PortTypeMismatch(t *testing.T) {
+	ig := NewIntentGraph()
+	ig.Nodes["role"] = Node{ID: "role", Kind: KindIAMRole, Spec: map[string]any{}}
+	ig.Nodes["sn"] = Node{ID: "sn", Kind: KindSubnet, Spec: map[string]any{}}
+	e := Edge{}
+	e.Source.ID, e.Source.Port = "role", "role"
+	e.Target.ID, e.Target.Port = "sn", "vpc"
+	ig.Edges = []Edge{e}
+	if err := ig.Normalize(); err == nil {
+		t.Fatal("expected error for iam -> network port type mismatch")
 	}
 }
 

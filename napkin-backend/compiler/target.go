@@ -39,15 +39,19 @@ type TFFile struct {
 	Block []TFBlock
 }
 
-// DirectedEdge is a canvas edge (React Flow IDs). Ports match handle ids (e.g. db-in, db-out).
+// DirectedEdge is a canvas edge (React Flow IDs). Ports match handle ids
+// declared on the node kind (e.g. "subnet", "instanceRole", "connection"); the
+// compile target dispatches wiring effects based on
+// (FromKind+SourcePort, ToKind+TargetPort), so both ports are required.
 type DirectedEdge struct {
-	FromID, ToID             string
+	FromID, ToID           string
 	SourcePort, TargetPort string
 }
 
 type GraphNode struct {
 	ID             string
 	LocalName      string // Terraform resource/data local name (slug)
+	Kind           string // canonical kind id, mirrors graph.NodeKind
 	Class          NodeClass
 	Type           string // Terraform type e.g. aws_instance
 	Attributes     map[string]string

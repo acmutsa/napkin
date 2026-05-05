@@ -60,6 +60,7 @@ func IntentGraphToIR(ig *graph.IntentGraph) (compiler.IR, error) {
 		irNodes = append(irNodes, compiler.GraphNode{
 			ID:             string(node.ID),
 			LocalName:      ln,
+			Kind:           string(node.Kind),
 			Class:          compiler.NodeClass(classStr),
 			Type:           tfType,
 			Attributes:     attrs,

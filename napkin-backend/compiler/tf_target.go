@@ -7,6 +7,64 @@ import (
 	"strings"
 )
 
+// networkBindings tells the compiler whether to emit the built-in napkin VPC/subnets
+// or attach SG / EC2 / ALB / target groups to VPC + subnets drawn on the canvas.
+//
+// With the V1 port model these defaults are only used as a *fallback* when a
+// canvas resource has no explicit subnet/SG edges. Explicit edges always win.
+type networkBindings struct {
+	useCanvasNet    bool
+	vpcIDExpr       string // Terraform expression, e.g. aws_vpc.foo.id
+	subnetAExpr     string // aws_subnet.xxx.id
+	subnetBExpr     string // second subnet for ALB (may equal subnetAExpr if only one)
+	primaryVPCLocal string // LocalName of first canvas VPC; empty when using napkin network
+}
+
+func resolveNetworkBindings(ir IR) networkBindings {
+	var vpcs, subnets []GraphNode
+	for _, n := range ir.Nodes {
+		if n.Class != ClassResource {
+			continue
+		}
+		switch n.Type {
+		case "aws_vpc":
+			vpcs = append(vpcs, n)
+		case "aws_subnet":
+			subnets = append(subnets, n)
+		}
+	}
+
+	if len(vpcs) < 1 || len(subnets) < 1 {
+		return networkBindings{
+			useCanvasNet: false,
+			vpcIDExpr:    "aws_vpc." + napkinVPC + ".id",
+			subnetAExpr:  "aws_subnet." + napkinSubnetA + ".id",
+			subnetBExpr:  "aws_subnet." + napkinSubnetB + ".id",
+		}
+	}
+
+	slices.SortFunc(vpcs, func(a, b GraphNode) int {
+		return strings.Compare(a.LocalName, b.LocalName)
+	})
+	slices.SortFunc(subnets, func(a, b GraphNode) int {
+		return strings.Compare(a.LocalName, b.LocalName)
+	})
+
+	subnetA := "aws_subnet." + subnets[0].LocalName + ".id"
+	subnetB := subnetA
+	if len(subnets) >= 2 {
+		subnetB = "aws_subnet." + subnets[1].LocalName + ".id"
+	}
+
+	return networkBindings{
+		useCanvasNet:    true,
+		vpcIDExpr:       "aws_vpc." + vpcs[0].LocalName + ".id",
+		subnetAExpr:     subnetA,
+		subnetBExpr:     subnetB,
+		primaryVPCLocal: vpcs[0].LocalName,
+	}
+}
+
 const (
 	napkinVPC      = "napkin_vpc"
 	napkinSubnetA  = "napkin_public_a"
@@ -63,37 +121,25 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 		napkinBanner("# --- napkin: data & network ---"),
 	)
 	tfFile.Block = append(tfFile.Block, napkinDataBlocks()...)
-	tfFile.Block = append(tfFile.Block, napkinNetworkBlocks()...)
+	nb := resolveNetworkBindings(ir)
+	if !nb.useCanvasNet {
+		tfFile.Block = append(tfFile.Block, napkinNetworkBlocks()...)
+	}
 
 	tfFile.Block = append(tfFile.Block,
 		napkinBanner("# --- napkin: security groups ---"),
 	)
-	tfFile.Block = append(tfFile.Block, napkinSecurityGroupBlocks()...)
+	tfFile.Block = append(tfFile.Block, napkinSecurityGroupBlocks(nb.vpcIDExpr)...)
 
 	idToNode := make(map[string]GraphNode, len(ir.Nodes))
 	for _, n := range ir.Nodes {
 		idToNode[n.ID] = n
 	}
 
-	dependsRefs := make(map[string][]string)
-	rdsRefsByEC2 := make(map[string][]string)
-
-	for _, e := range ir.Edges {
-		from, ok1 := idToNode[e.FromID]
-		to, ok2 := idToNode[e.ToID]
-		if !ok1 || !ok2 {
-			continue
-		}
-		db, ec2, ok := linkedRDSAndEC2(from, to)
-		if !ok || !edgeAllowsRDSLink(e, from, to) {
-			continue
-		}
-		ref := fmt.Sprintf("aws_db_instance.%s", db.LocalName)
-		dependsRefs[ec2.ID] = appendUniqueRef(dependsRefs[ec2.ID], ref)
-		rdsRefsByEC2[ec2.ID] = appendUniqueRef(rdsRefsByEC2[ec2.ID], db.LocalName)
+	bindings, err := resolveEdges(ir.Edges, idToNode)
+	if err != nil {
+		return nil, err
 	}
-
-	lbToEC2 := napkinLBTargets(ir.Edges, idToNode)
 
 	tfFile.Block = append(tfFile.Block, napkinBanner("# --- napkin: canvas resources ---"))
 
@@ -110,23 +156,22 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 			maps.Copy(block.ExprAttributes, node.ExprAttributes)
 		}
 
-		if refs := dependsRefs[node.ID]; len(refs) > 0 {
-			slices.Sort(refs)
-			block.ExprAttributes["depends_on"] = "[" + strings.Join(refs, ", ") + "]"
-		}
+		applyNodeBindings(&block, node, bindings, nb)
 
-		if node.Type == "aws_instance" {
-			slugs := rdsRefsByEC2[node.ID]
-			slices.Sort(slugs)
-			if !hasUserData(block) {
-				block.ExprAttributes["user_data"] = napkinEC2UserData(slugs)
-			}
-			napkinEnhanceEC2Instance(&block)
-		}
-
-		if node.Type == "aws_lb" {
+		switch node.Type {
+		case "aws_subnet":
+			applySubnetBindings(&block, node, bindings, nb)
+		case "aws_security_group":
+			applySecurityGroupBindings(&block, node, bindings, nb)
+		case "aws_instance":
+			applyComputeBindings(&block, node, bindings, nb)
+		case "aws_lb":
 			lbNodes = append(lbNodes, node)
-			napkinEnhanceALB(&block)
+			applyLoadBalancerBindings(&block, node, bindings, nb)
+		case "aws_db_instance":
+			applyDatabaseBindings(&block, node, bindings)
+		case "aws_lambda_function":
+			applyLambdaBindings(&block, node, bindings)
 		}
 
 		local := node.LocalName
@@ -150,18 +195,33 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 		tfFile.Block = append(tfFile.Block, block)
 	}
 
+	if dbSubnetGroups := emitDBSubnetGroups(ir, bindings); len(dbSubnetGroups) > 0 {
+		tfFile.Block = append(tfFile.Block, napkinBanner("# --- napkin: db subnet groups ---"))
+		tfFile.Block = append(tfFile.Block, dbSubnetGroups...)
+	}
+
+	if iamProfiles := emitInstanceProfiles(ir, bindings); len(iamProfiles) > 0 {
+		tfFile.Block = append(tfFile.Block, napkinBanner("# --- napkin: iam instance profiles ---"))
+		tfFile.Block = append(tfFile.Block, iamProfiles...)
+	}
+
+	if eventSourceBlocks := emitLambdaEventSources(ir, bindings); len(eventSourceBlocks) > 0 {
+		tfFile.Block = append(tfFile.Block, napkinBanner("# --- napkin: lambda event sources ---"))
+		tfFile.Block = append(tfFile.Block, eventSourceBlocks...)
+	}
+
 	if len(lbNodes) > 0 {
 		tfFile.Block = append(tfFile.Block, napkinBanner("# --- napkin: ALB listeners & attachments ---"))
 	}
 	tgCounter := 1
 	for _, lb := range lbNodes {
-		targets := lbToEC2[lb.ID]
+		targets := bindings.lbTargets[lb.ID]
 		tgPrefix := fmt.Sprintf("nk%02d", tgCounter)
 		tgCounter++
 		tgName := "tg_" + lb.LocalName
 		listenerName := "lis_" + lb.LocalName
 
-		tfFile.Block = append(tfFile.Block, napkinLBTargetGroupBlock(tgName, tgPrefix))
+		tfFile.Block = append(tfFile.Block, napkinLBTargetGroupBlock(tgName, tgPrefix, lbVPCExpr(lb, bindings, nb)))
 		tfFile.Block = append(tfFile.Block, napkinLBListenerBlock(listenerName, lb.LocalName, tgName))
 
 		for _, ec2 := range targets {
@@ -184,6 +244,241 @@ func (t *TerraformTarget) Compile(ir IR) (*TFFile, error) {
 	}
 
 	return tfFile, nil
+}
+
+// applyNodeBindings is shared logic that does not depend on Terraform type.
+// (Currently a no-op placeholder; kept so future cross-cutting wiring like
+// tags or shared depends_on aggregation has a single insertion point.)
+func applyNodeBindings(_ *TFBlock, _ GraphNode, _ *edgeBindings, _ networkBindings) {
+}
+
+// applySubnetBindings sets vpc_id from a vpc->subnet edge if present, else
+// falls back to the canvas VPC (when the canvas drew a VPC) or napkin's VPC.
+func applySubnetBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb networkBindings) {
+	if hasVPCID(*block) {
+		return
+	}
+	if vpcLocal, ok := b.vpcOf[node.ID]; ok && vpcLocal != "" {
+		block.ExprAttributes["vpc_id"] = "aws_vpc." + vpcLocal + ".id"
+		return
+	}
+	if nb.useCanvasNet && nb.primaryVPCLocal != "" {
+		block.ExprAttributes["vpc_id"] = "aws_vpc." + nb.primaryVPCLocal + ".id"
+	}
+}
+
+// applySecurityGroupBindings sets vpc_id from a vpc->sg edge if present, else
+// falls back to napkin's VPC when no canvas VPC was drawn.
+func applySecurityGroupBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb networkBindings) {
+	if hasVPCID(*block) {
+		return
+	}
+	if vpcLocal, ok := b.vpcOf[node.ID]; ok && vpcLocal != "" {
+		block.ExprAttributes["vpc_id"] = "aws_vpc." + vpcLocal + ".id"
+		return
+	}
+	if nb.useCanvasNet && nb.primaryVPCLocal != "" {
+		block.ExprAttributes["vpc_id"] = "aws_vpc." + nb.primaryVPCLocal + ".id"
+	} else {
+		block.ExprAttributes["vpc_id"] = nb.vpcIDExpr
+	}
+}
+
+// applyComputeBindings wires subnet/security groups/data sources/IAM on EC2.
+// Explicit edges win; otherwise we fall back to napkin's defaults so a
+// minimal "drop an EC2 on the canvas" still compiles to a working stack.
+func applyComputeBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb networkBindings) {
+	subnetExpr := nb.subnetAExpr
+	if subnets := b.subnetOf[node.ID]; len(subnets) > 0 {
+		subnetExpr = "aws_subnet." + subnets[0] + ".id"
+	}
+	block.ExprAttributes["subnet_id"] = subnetExpr
+
+	sgExpr := defaultEC2SecurityGroupExpr()
+	if sgs := b.sgOf[node.ID]; len(sgs) > 0 {
+		refs := make([]string, 0, len(sgs))
+		for _, s := range sgs {
+			refs = append(refs, "aws_security_group."+s+".id")
+		}
+		sgExpr = joinExprList(refs)
+	}
+	block.ExprAttributes["vpc_security_group_ids"] = sgExpr
+
+	if block.Attributes["ami"] == "" {
+		block.ExprAttributes["ami"] = "data.aws_ami." + napkinAMIData + ".id"
+	}
+
+	dbDeps := append([]string(nil), b.dbDependsOnEC2[node.ID]...)
+	if !hasUserData(*block) {
+		block.ExprAttributes["user_data"] = napkinEC2UserData(b.dbInjectIntoEC2[node.ID])
+	}
+	if profile := b.instanceProfileFor[node.ID]; profile != "" {
+		block.ExprAttributes["iam_instance_profile"] = "aws_iam_instance_profile." + profile + "_profile.name"
+	}
+
+	if len(dbDeps) > 0 {
+		refs := make([]string, 0, len(dbDeps))
+		for _, slug := range dbDeps {
+			refs = append(refs, "aws_db_instance."+slug)
+		}
+		block.ExprAttributes["depends_on"] = joinExprList(refs)
+	}
+}
+
+// applyDatabaseBindings wires subnet groups + reverse depends_on for compute->db edges.
+func applyDatabaseBindings(block *TFBlock, node GraphNode, b *edgeBindings) {
+	if subnets := b.subnetOf[node.ID]; len(subnets) > 0 {
+		block.ExprAttributes["db_subnet_group_name"] = "aws_db_subnet_group." + node.LocalName + "_sg.name"
+	}
+	if reverse := b.dbDependsOnEC2Reverse[node.ID]; len(reverse) > 0 {
+		refs := make([]string, 0, len(reverse))
+		for _, slug := range reverse {
+			refs = append(refs, "aws_instance."+slug)
+		}
+		block.ExprAttributes["depends_on"] = joinExprList(refs)
+	}
+}
+
+// applyLoadBalancerBindings wires subnets + security_groups on the LB.
+// Falls back to napkin's two subnets / ALB SG when no edges are drawn.
+func applyLoadBalancerBindings(block *TFBlock, node GraphNode, b *edgeBindings, nb networkBindings) {
+	subnetExprs := make([]string, 0, 2)
+	if subnets := b.subnetOf[node.ID]; len(subnets) > 0 {
+		for _, sn := range subnets {
+			subnetExprs = append(subnetExprs, "aws_subnet."+sn+".id")
+		}
+		// ALBs need >= 2 subnets across AZs; pad with napkin subnet B as a sane fallback.
+		if len(subnetExprs) == 1 {
+			subnetExprs = append(subnetExprs, nb.subnetBExpr)
+		}
+	} else {
+		subnetExprs = []string{nb.subnetAExpr, nb.subnetBExpr}
+	}
+	block.ExprAttributes["subnets"] = "[" + strings.Join(subnetExprs, ", ") + "]"
+
+	sgExpr := defaultLBSecurityGroupExpr()
+	if sgs := b.sgOf[node.ID]; len(sgs) > 0 {
+		refs := make([]string, 0, len(sgs))
+		for _, s := range sgs {
+			refs = append(refs, "aws_security_group."+s+".id")
+		}
+		sgExpr = joinExprList(refs)
+	}
+	block.ExprAttributes["security_groups"] = sgExpr
+	block.ExprAttributes["internal"] = "false"
+}
+
+// applyLambdaBindings wires the iam role expr; event source mappings are
+// emitted as separate top-level blocks below.
+func applyLambdaBindings(block *TFBlock, node GraphNode, b *edgeBindings) {
+	if role := b.lambdaRole[node.ID]; role != "" {
+		block.ExprAttributes["role"] = "aws_iam_role." + role + ".arn"
+	}
+}
+
+// emitDBSubnetGroups creates one aws_db_subnet_group per database that has
+// subnet edges, since RDS requires this resource for VPC-bound databases.
+func emitDBSubnetGroups(ir IR, b *edgeBindings) []TFBlock {
+	var blocks []TFBlock
+	for _, n := range ir.Nodes {
+		if n.Type != "aws_db_instance" {
+			continue
+		}
+		subnets := b.subnetOf[n.ID]
+		if len(subnets) == 0 {
+			continue
+		}
+		refs := make([]string, 0, len(subnets))
+		for _, sn := range subnets {
+			refs = append(refs, "aws_subnet."+sn+".id")
+		}
+		blocks = append(blocks, TFBlock{
+			Class:  "resource",
+			Labels: []string{"aws_db_subnet_group", n.LocalName + "_sg"},
+			ExprAttributes: map[string]string{
+				"subnet_ids": joinExprList(refs),
+			},
+		})
+	}
+	return blocks
+}
+
+// emitInstanceProfiles wraps each IAM role bound to an EC2 in an aws_iam_instance_profile.
+func emitInstanceProfiles(ir IR, b *edgeBindings) []TFBlock {
+	var blocks []TFBlock
+	seen := map[string]bool{}
+	for _, n := range ir.Nodes {
+		if n.Type != "aws_instance" {
+			continue
+		}
+		role := b.instanceProfileFor[n.ID]
+		if role == "" || seen[role] {
+			continue
+		}
+		seen[role] = true
+		blocks = append(blocks, TFBlock{
+			Class:  "resource",
+			Labels: []string{"aws_iam_instance_profile", role + "_profile"},
+			ExprAttributes: map[string]string{
+				"role": "aws_iam_role." + role + ".name",
+			},
+		})
+	}
+	return blocks
+}
+
+// emitLambdaEventSources turns SQS->Lambda edges into aws_lambda_event_source_mapping.
+func emitLambdaEventSources(ir IR, b *edgeBindings) []TFBlock {
+	var blocks []TFBlock
+	for _, n := range ir.Nodes {
+		if n.Type != "aws_lambda_function" {
+			continue
+		}
+		queues := b.queueToLambda[n.ID]
+		if len(queues) == 0 {
+			continue
+		}
+		for _, q := range queues {
+			blocks = append(blocks, TFBlock{
+				Class:  "resource",
+				Labels: []string{"aws_lambda_event_source_mapping", n.LocalName + "_" + q + "_evt"},
+				ExprAttributes: map[string]string{
+					"event_source_arn": "aws_sqs_queue." + q + ".arn",
+					"function_name":    "aws_lambda_function." + n.LocalName + ".function_name",
+				},
+			})
+		}
+	}
+	return blocks
+}
+
+func defaultEC2SecurityGroupExpr() string {
+	return "[aws_security_group." + napkinSGEC2 + ".id]"
+}
+
+func defaultLBSecurityGroupExpr() string {
+	return "[aws_security_group." + napkinSGALB + ".id]"
+}
+
+func lbVPCExpr(lb GraphNode, b *edgeBindings, nb networkBindings) string {
+	if subnets := b.subnetOf[lb.ID]; len(subnets) > 0 {
+		// LB target groups need a vpc_id; use the VPC of the (first) explicit subnet
+		// when we can't easily resolve it. Fall back to the canvas/napkin VPC.
+		_ = subnets
+	}
+	return nb.vpcIDExpr
+}
+
+func hasVPCID(block TFBlock) bool {
+	if block.Attributes["vpc_id"] != "" {
+		return true
+	}
+	if block.ExprAttributes != nil {
+		if v, ok := block.ExprAttributes["vpc_id"]; ok && v != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func terraformRequiredProvidersBlock() TFBlock {
@@ -327,8 +622,8 @@ func napkinNetworkBlocks() []TFBlock {
 	}
 }
 
-func napkinSecurityGroupBlocks() []TFBlock {
-	vpcID := "aws_vpc." + napkinVPC + ".id"
+func napkinSecurityGroupBlocks(vpcIDExpr string) []TFBlock {
+	vpcID := vpcIDExpr
 	albSG := "aws_security_group." + napkinSGALB + ".id"
 
 	return []TFBlock{
@@ -389,27 +684,6 @@ func napkinSecurityGroupBlocks() []TFBlock {
 	}
 }
 
-func napkinEnhanceEC2Instance(block *TFBlock) {
-	subnetExpr := "aws_subnet." + napkinSubnetA + ".id"
-	sgExpr := "[" + "aws_security_group." + napkinSGEC2 + ".id" + "]"
-
-	block.ExprAttributes["subnet_id"] = subnetExpr
-	block.ExprAttributes["vpc_security_group_ids"] = sgExpr
-
-	if block.Attributes["ami"] != "" {
-		return
-	}
-	block.ExprAttributes["ami"] = "data.aws_ami." + napkinAMIData + ".id"
-}
-
-func napkinEnhanceALB(block *TFBlock) {
-	subnets := "[aws_subnet." + napkinSubnetA + ".id, aws_subnet." + napkinSubnetB + ".id]"
-	sgs := "[" + "aws_security_group." + napkinSGALB + ".id" + "]"
-	block.ExprAttributes["subnets"] = subnets
-	block.ExprAttributes["security_groups"] = sgs
-	block.ExprAttributes["internal"] = "false"
-}
-
 func napkinEC2UserData(rdsSlugs []string) string {
 	var b strings.Builder
 	b.WriteString("<<-EOT\n#!/bin/bash\nset -euo pipefail\n")
@@ -419,9 +693,12 @@ func napkinEC2UserData(rdsSlugs []string) string {
 	b.WriteString("else apt-get update && apt-get install -y nginx; fi\n")
 	b.WriteString("systemctl enable nginx\nsystemctl start nginx\n")
 
-	for i, slug := range rdsSlugs {
+	sortedSlugs := append([]string(nil), rdsSlugs...)
+	slices.Sort(sortedSlugs)
+
+	for i, slug := range sortedSlugs {
 		ref := fmt.Sprintf("aws_db_instance.%s", slug)
-		if len(rdsSlugs) == 1 {
+		if len(sortedSlugs) == 1 {
 			b.WriteString(fmt.Sprintf("echo \"DATABASE_HOST=${%s.address}\" >> /etc/environment\n", ref))
 			b.WriteString(fmt.Sprintf("echo \"DATABASE_PORT=${%s.port}\" >> /etc/environment\n", ref))
 			b.WriteString(fmt.Sprintf("echo \"DATABASE_ENDPOINT=${%s.endpoint}\" >> /etc/environment\n", ref))
@@ -436,40 +713,14 @@ func napkinEC2UserData(rdsSlugs []string) string {
 	return b.String()
 }
 
-func napkinLBTargets(edges []DirectedEdge, idToNode map[string]GraphNode) map[string][]GraphNode {
-	out := make(map[string][]GraphNode)
-	for _, e := range edges {
-		from := idToNode[e.FromID]
-		to := idToNode[e.ToID]
-		if from.Type != "aws_lb" || to.Type != "aws_instance" {
-			continue
-		}
-		if !edgeAllowsLBToEC2(e) {
-			continue
-		}
-		out[from.ID] = append(out[from.ID], to)
-	}
-	return out
-}
-
-func edgeAllowsLBToEC2(e DirectedEdge) bool {
-	if e.SourcePort != "" && e.SourcePort != "out-network" {
-		return false
-	}
-	if e.TargetPort != "" && e.TargetPort != "in-network" {
-		return false
-	}
-	return true
-}
-
-func napkinLBTargetGroupBlock(tfName, namePrefix string) TFBlock {
+func napkinLBTargetGroupBlock(tfName, namePrefix, vpcIDExpr string) TFBlock {
 	return TFBlock{
 		Class:      "resource",
 		Labels:     []string{"aws_lb_target_group", tfName},
 		Attributes: map[string]string{"name_prefix": namePrefix, "protocol": "HTTP"},
 		ExprAttributes: map[string]string{
 			"port":                 "80",
-			"vpc_id":               "aws_vpc." + napkinVPC + ".id",
+			"vpc_id":               vpcIDExpr,
 			"target_type":          `"instance"`,
 			"deregistration_delay": "30",
 		},
@@ -518,53 +769,6 @@ func hasUserData(block TFBlock) bool {
 		}
 	}
 	return false
-}
-
-func linkedRDSAndEC2(a, b GraphNode) (db GraphNode, ec2 GraphNode, ok bool) {
-	switch {
-	case a.Type == "aws_db_instance" && b.Type == "aws_instance":
-		return a, b, true
-	case a.Type == "aws_instance" && b.Type == "aws_db_instance":
-		return b, a, true
-	default:
-		return GraphNode{}, GraphNode{}, false
-	}
-}
-
-// edgeAllowsRDSLink accepts edges even when React Flow omits handle ids (common cause of missing compile links).
-// Port names follow the typed-port vocabulary in napkin-backend/graph/kinds.go and napkin-app/src/lib/kinds.ts.
-func edgeAllowsRDSLink(e DirectedEdge, from, to GraphNode) bool {
-	switch {
-	case from.Type == "aws_db_instance" && to.Type == "aws_instance":
-		// Database out-data -> EC2 in-env (connection injected as env vars) or in-network (reachability).
-		if e.SourcePort != "" && e.SourcePort != "out-data" {
-			return false
-		}
-		if e.TargetPort != "" && e.TargetPort != "in-env" && e.TargetPort != "in-network" {
-			return false
-		}
-		return true
-	case from.Type == "aws_instance" && to.Type == "aws_db_instance":
-		// EC2 out-network/out-data -> Database in-network/in-env.
-		if e.SourcePort != "" && e.SourcePort != "out-network" && e.SourcePort != "out-data" {
-			return false
-		}
-		if e.TargetPort != "" && e.TargetPort != "in-network" && e.TargetPort != "in-env" {
-			return false
-		}
-		return true
-	default:
-		return false
-	}
-}
-
-func appendUniqueRef(list []string, ref string) []string {
-	for _, x := range list {
-		if x == ref {
-			return list
-		}
-	}
-	return append(list, ref)
 }
 
 func (t *TerraformTarget) ToString() string {

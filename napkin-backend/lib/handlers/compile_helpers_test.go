@@ -118,8 +118,8 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 		},
 		"edges": [
 			{
-				"source": { "node": "resource", "id": "dbid", "port": "out-data" },
-				"target": { "node": "resource", "id": "ec2id", "port": "in-env" },
+				"source": { "node": "resource", "id": "ec2id", "port": "dataSource" },
+				"target": { "node": "resource", "id": "dbid", "port": "connection" },
 				"type": "data-flow"
 			}
 		]
@@ -140,11 +140,11 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 	if len(ir.Edges) != 1 {
 		t.Fatalf("edges: got %d", len(ir.Edges))
 	}
-	if ir.Edges[0].FromID != "dbid" || ir.Edges[0].ToID != "ec2id" {
+	if ir.Edges[0].FromID != "ec2id" || ir.Edges[0].ToID != "dbid" {
 		t.Fatalf("edge endpoints: %+v", ir.Edges[0])
 	}
-	if ir.Edges[0].TargetPort != "in-env" {
-		t.Fatalf("TargetPort=%q", ir.Edges[0].TargetPort)
+	if ir.Edges[0].SourcePort != "dataSource" || ir.Edges[0].TargetPort != "connection" {
+		t.Fatalf("ports preserved? %+v", ir.Edges[0])
 	}
 
 	var db *compiler.GraphNode
@@ -159,6 +159,9 @@ func TestIntentGraphToIR_DBToEC2EdgeAndDefaults(t *testing.T) {
 	}
 	if db.LocalName != "database" {
 		t.Fatalf("db LocalName=%q", db.LocalName)
+	}
+	if db.Kind != "database" {
+		t.Fatalf("db Kind=%q want database", db.Kind)
 	}
 	if db.ExprAttributes["allocated_storage"] != "20" {
 		t.Fatalf("db defaults: %#v", db.ExprAttributes)
@@ -221,8 +224,8 @@ func TestCompileProducesDependsOn(t *testing.T) {
 		},
 		"edges": [
 			{
-				"source": { "node": "resource", "id": "dbid", "port": "out-data" },
-				"target": { "node": "resource", "id": "ec2id", "port": "in-env" },
+				"source": { "node": "resource", "id": "ec2id", "port": "dataSource" },
+				"target": { "node": "resource", "id": "dbid", "port": "connection" },
 				"type": "data-flow"
 			}
 		]
@@ -263,7 +266,7 @@ func TestCompileProducesDependsOn(t *testing.T) {
 	}
 }
 
-func TestCompileRDS_EC2_LinkWithoutHandlePorts(t *testing.T) {
+func TestCompile_RejectsEdgeWithoutPorts(t *testing.T) {
 	raw := []byte(`{
 		"nodes": {
 			"resource": [
@@ -298,26 +301,12 @@ func TestCompileRDS_EC2_LinkWithoutHandlePorts(t *testing.T) {
 	if err := ig.FromJSON(raw); err != nil {
 		t.Fatal(err)
 	}
-	if err := ig.Normalize(); err != nil {
-		t.Fatal(err)
-	}
-	ir, err := IntentGraphToIR(ig)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	target := &compiler.TerraformTarget{}
-	tfFile, err := target.Compile(ir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := tfFile.String()
-	if !strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
-		t.Fatalf("missing depends_on without ports:\n%s", out)
+	if err := ig.Normalize(); err == nil {
+		t.Fatal("expected validation error: edge without ports must be rejected")
 	}
 }
 
-func TestCompileRDS_EC2_ReversedEdgeDirection(t *testing.T) {
+func TestCompileEC2ToDB_ReverseEdgeProducesDependsOnOnDB(t *testing.T) {
 	raw := []byte(`{
 		"nodes": {
 			"resource": [
@@ -341,8 +330,8 @@ func TestCompileRDS_EC2_ReversedEdgeDirection(t *testing.T) {
 		},
 		"edges": [
 			{
-				"source": { "node": "resource", "id": "ec2id", "port": "out-data" },
-				"target": { "node": "resource", "id": "dbid" },
+				"source": { "node": "resource", "id": "ec2id", "port": "outboundTraffic" },
+				"target": { "node": "resource", "id": "dbid", "port": "inboundTraffic" },
 				"type": "data-flow"
 			}
 		]
@@ -366,7 +355,51 @@ func TestCompileRDS_EC2_ReversedEdgeDirection(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := tfFile.String()
-	if !strings.Contains(out, `depends_on = [aws_db_instance.database]`) {
-		t.Fatalf("missing depends_on for ec2->db edge:\n%s", out)
+	if !strings.Contains(out, `depends_on = [aws_instance.ec2_instance]`) {
+		t.Fatalf("expected DB to depend_on EC2 for reverse traffic edge:\n%s", out)
+	}
+}
+
+func TestIntentGraphToIR_IAMRoleGetsAssumeRolePolicyExpr(t *testing.T) {
+	raw := []byte(`{
+		"nodes": {
+			"resource": [
+				{
+					"id": "role1",
+					"kind": "iamRole",
+					"spec": {
+						"label": "IAM Role",
+						"class": "resource",
+						"type": "aws_iam_role"
+					}
+				}
+			]
+		},
+		"edges": []
+	}`)
+
+	ig := graph.NewIntentGraph()
+	if err := ig.FromJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := ig.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	ir, err := IntentGraphToIR(ig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var role *compiler.GraphNode
+	for i := range ir.Nodes {
+		if ir.Nodes[i].Type == "aws_iam_role" {
+			role = &ir.Nodes[i]
+			break
+		}
+	}
+	if role == nil {
+		t.Fatal("aws_iam_role node missing from IR")
+	}
+	if role.ExprAttributes["assume_role_policy"] == "" {
+		t.Fatalf("expect assume_role_policy from KindIAMRole.ExprDefaults, got %#v", role.ExprAttributes)
 	}
 }

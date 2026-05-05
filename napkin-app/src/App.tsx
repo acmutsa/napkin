@@ -24,7 +24,7 @@ import "@xyflow/react/dist/style.css";
 
 import { transformNodes } from "@/lib/transformer/transformer";
 import { apiBase } from "@/lib/apiBase";
-import { getKind } from "@/lib/kinds";
+import { getKind, validateConnection } from "@/lib/kinds";
 import { type AnalyzeError } from "./lib/types/errors";
 
 const nodeTypes = {
@@ -53,25 +53,69 @@ function Flow() {
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [nodeErrors, setNodeErrors] = useState<Record<string, string>>({});
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    []
+    [],
   );
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    []
+    [],
   );
   const onConnect: OnConnect = useCallback(
-    (connection) => setEdges((eds) => addEdge(connection, eds)),
-    []
+    (connection) => {
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const sourceKind =
+        (sourceNode?.data as { kind?: string } | undefined)?.kind;
+      const targetKind =
+        (targetNode?.data as { kind?: string } | undefined)?.kind;
+
+      const reason = validateConnection({
+        sourceKind,
+        sourcePortId: connection.sourceHandle,
+        targetKind,
+        targetPortId: connection.targetHandle,
+      });
+      if (reason) {
+        setConnectError(reason);
+        return;
+      }
+      setConnectError(null);
+      setEdges((eds) => addEdge(connection, eds));
+    },
+    [nodes],
   );
 
-  const handleAnalyzeError = useCallback((nodeId: string | null, message: string) => {
-    if (nodeId) {
-      setNodeErrors((prev) => ({ ...prev, [nodeId]: message }));
-    }
-  }, []);
+  const isValidConnection = useCallback(
+    (connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }) => {
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const sourceKind =
+        (sourceNode?.data as { kind?: string } | undefined)?.kind;
+      const targetKind =
+        (targetNode?.data as { kind?: string } | undefined)?.kind;
+      return (
+        validateConnection({
+          sourceKind,
+          sourcePortId: connection.sourceHandle,
+          targetKind,
+          targetPortId: connection.targetHandle,
+        }) === null
+      );
+    },
+    [nodes],
+  );
+
+  const handleAnalyzeError = useCallback(
+    (nodeId: string | null, message: string) => {
+      if (nodeId) {
+        setNodeErrors((prev) => ({ ...prev, [nodeId]: message }));
+      }
+    },
+    [],
+  );
 
   const handleAnalyze = useCallback(
     async (analysisType: string): Promise<AnalyzeError[]> => {
@@ -106,7 +150,7 @@ function Flow() {
           }
         });
 
-        setNodeErrors(newNodeErrors)
+        setNodeErrors(newNodeErrors);
 
         return menuError;
       } catch (error) {
@@ -114,11 +158,11 @@ function Flow() {
           {
             severity: "error",
             message: (error as Error).message,
-          }
-        ]
+          },
+        ];
       }
     },
-    [nodes, edges, handleAnalyzeError]
+    [nodes, edges, handleAnalyzeError],
   );
 
   const intentGraph = useMemo(
@@ -156,6 +200,24 @@ function Flow() {
     <div className="w-screen h-screen relative">
       <Toolbox onAdd={onAdd} />
       <FloatingMenu onAnalyze={handleAnalyze} intentGraph={intentGraph} />
+      {connectError && (
+        <div
+          role="alert"
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-20 max-w-lg rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 shadow"
+        >
+          <div className="flex items-start gap-2">
+            <span className="flex-1">{connectError}</span>
+            <button
+              type="button"
+              onClick={() => setConnectError(null)}
+              className="text-red-500 hover:text-red-700"
+              aria-label="Dismiss"
+            >
+              x
+            </button>
+          </div>
+        </div>
+      )}
       <ReactFlow
         nodes={nodesWithErrors}
         edges={edges}
@@ -164,6 +226,7 @@ function Flow() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        isValidConnection={isValidConnection}
         fitView
         fitViewOptions={fitViewOptions}
         defaultEdgeOptions={defaultEdgeOptions}
