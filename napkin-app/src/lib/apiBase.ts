@@ -1,10 +1,10 @@
-/** Backend origin for Compile / Analyze (no trailing slash). */
+/** Backend origin for Compile / Analyze (no trailing slash). Empty string = same origin (Fly + Go serving static). */
 export function apiBase(): string {
   const raw = import.meta.env.VITE_API_BASE;
   if (typeof raw === "string" && raw.trim()) {
     return raw.replace(/\/$/, "");
   }
-  return "http://localhost:8080";
+  return "";
 }
 
 /** Default AWS region embedded in intent graph until the canvas owns region UI. */
