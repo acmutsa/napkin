@@ -1,0 +1,159 @@
+main {
+  width: min(760px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 80px 0;
+}
+
+header {
+  margin-bottom: 48px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 680px;
+  margin: 12px 0 16px;
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+}
+
+.lede {
+  max-width: 560px;
+  font-size: 1.15rem;
+}
+
+.card {
+  margin-top: 20px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin: 0 0 6px;
+}
+
+.card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.status {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font: 700 0.75rem/1 var(--mono);
+  text-transform: uppercase;
+}
+
+.status.loading {
+  color: #9a6700;
+  background: #fff8c5;
+}
+
+.status.ready {
+  color: #116329;
+  background: #dafbe1;
+}
+
+.status.error {
+  color: #a40e26;
+  background: #ffebe9;
+}
+
+.detail,
+.error {
+  margin-top: 20px;
+}
+
+.error {
+  color: #cf222e;
+}
+
+.controls {
+  margin-top: 24px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--heading);
+  font-weight: 650;
+}
+
+.input-row {
+  display: flex;
+  gap: 10px;
+}
+
+input,
+button {
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font: inherit;
+}
+
+input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 12px;
+  color: var(--heading);
+  background: var(--background);
+}
+
+button {
+  padding: 8px 18px;
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+output {
+  display: block;
+  margin-top: 18px;
+  padding: 14px;
+  overflow-wrap: anywhere;
+  border-radius: 9px;
+  color: var(--heading);
+  background: var(--code-background);
+  font-family: var(--mono);
+}
+
+code {
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--heading);
+  background: var(--code-background);
+  font-family: var(--mono);
+}
+
+@media (max-width: 560px) {
+  main {
+    padding: 48px 0;
+  }
+
+  .card-heading,
+  .input-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
